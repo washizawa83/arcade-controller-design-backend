@@ -94,6 +94,7 @@ load_and_place('raspberry-pi-pico.pretty', 'RPi_Pico_SMD_TH', 'U1', 150.0, 26.0,
 # Move/add mounting holes to fixed positions
 HOLE_POS = [
     ('H1', 125.0, 10.0),
+    ('H2', 175.0, 10.0),
     ('H3', 10.0, 10.0),
     ('H4', 10.0, 100.0),
     ('H5', 10.0, 190.0),
@@ -102,7 +103,6 @@ HOLE_POS = [
     ('H8', 290.0, 190.0),
     ('H9', 290.0, 100.0),
     ('H10', 290.0, 10.0),
-    ('H11', 175.0, 10.0),
 ]
 for _r, _hx, _hy in HOLE_POS:
     # Move if exists; otherwise add from local mount library
