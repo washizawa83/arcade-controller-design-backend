@@ -53,30 +53,38 @@ add_line(x0, y1, x0, y0)
 # Load footprints from project-local libs (fp-lib-table lives in project dir)
 proj = Path('{work_project_dir.as_posix()}')
 
-def load_and_place(lib, fp, x, y, rot):
+def load_and_place(lib, fp, ref_name, x, y, rot):
     # pcbnew.FootprintLoad accepts a .pretty dir path and footprint name (file stem).
     pretty = proj / 'footprints' / lib
     stems = [p.stem for p in pretty.glob('*.kicad_mod')]
     name = fp
     if name not in stems:
-        lower_map = {{s.lower(): s for s in stems}}
-        if fp.lower() in lower_map:
-            name = lower_map[fp.lower()]
+        # Find case-insensitive match
+        for cand in stems:
+            if cand.lower() == fp.lower():
+                name = cand
+                break
     mod = pcbnew.FootprintLoad(str(pretty), name)
     if not mod:
         msg = (
-            f"Failed to load footprint: {{lib}}/{{fp}}; "
-            f"available={{stems}}"
+            "Failed to load footprint: {{}}/{{}}; available={{}}".format(
+                lib,
+                fp,
+                stems,
+            )
         )
         raise RuntimeError(msg)
+    # Set position, rotation, and reference
     mod.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
     mod.SetOrientationDegrees(rot)
+    mod.SetReference(ref_name)
     board.Add(mod)
 
-# Place Pico
+# Place Pico (use U1 by default)
 load_and_place(
     'raspberry-pi-pico.pretty',
     'RPi_Pico_SMD_TH',
+    'U1',
     {req.pico.x_mm},
     {req.pico.y_mm},
     {req.pico.rotation_deg},
@@ -84,8 +92,8 @@ load_and_place(
 
 # Place switches
 switches = {[(s.ref, s.x_mm, s.y_mm, s.rotation_deg) for s in req.switches]}
-for _ref, x, y, rot in switches:
-    load_and_place('kailh-choc-hotswap.pretty', 'switch_24', x, y, rot)
+for ref_name, x, y, rot in switches:
+    load_and_place('kailh-choc-hotswap.pretty', 'switch_24', ref_name, x, y, rot)
 
 out_path = proj / 'StickLess.kicad_pcb'
 pcbnew.SaveBoard(str(out_path), board)
@@ -103,8 +111,42 @@ def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
     work_project = work_root / "project"
     shutil.copytree(template, work_project, dirs_exist_ok=True)
 
-    # Ensure fp-lib-table exists in project root for local libs
-    # It is already placed in the template earlier.
+    # Normalize project-local libs: write fp-lib-table with local_* nicknames
+    fp_table = work_project / "fp-lib-table"
+    lines = [
+        "(fp_lib_table\n",
+        "  (lib (name \"local_rpi_pico\")(type \"KiCad\")\n",
+        "       (uri \"${KIPRJMOD}/footprints/raspberry-pi-pico.pretty\")\n",
+        "       (options \"\")(descr \"Proj local RPi Pico footprints\"))\n",
+        "  (lib (name \"local_kailh_choc\")(type \"KiCad\")\n",
+        "       (uri \"${KIPRJMOD}/footprints/kailh-choc-hotswap.pretty\")\n",
+        "       (options \"\")(descr \"Proj local Kailh choc hotswap\"))\n",
+        ")\n",
+    ]
+    fp_table.write_text("".join(lines))
+
+    # Normalize schematic footprint references to local_* nicknames
+    sch = work_project / "StickLess.kicad_sch"
+    if sch.exists():
+        import re
+
+        sch_text = sch.read_text()
+        # Map any RPi Pico footprint nickname to local one
+        sch_text = re.sub(
+            r'(property\s+"Footprint"\s+"\s*)(?:raspberry-pi-pico|RPi_Pico)(:RPi_Pico_SMD_TH)',
+            r'\1local_rpi_pico\2',
+            sch_text,
+        )
+        # Map any kailh choc nickname to local one
+        sch_text = re.sub(
+            r'(property\s+"Footprint"\s+"\s*)(?:kailh-choc-hotswap)(:switch_24)',
+            r'\1local_kailh_choc\2',
+            sch_text,
+        )
+        sch.write_text(sch_text)
+
+    # NOTE: Avoid deleting KiCad project cache files to preserve existing
+    # resolution context in the user's environment.
 
     # Write driver and run via KiCad-bundled Python
     driver = _write_driver_script(work_project, req)

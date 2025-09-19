@@ -30,7 +30,7 @@
 					)
 				)
 			)
-			(property "Footprint" "raspberry-pi-pico:RPi_Pico_SMD_TH"
+			(property "Footprint" "local_rpi_pico:RPi_Pico_SMD_TH"
 				(at 0 0 90)
 				(effects
 					(font
@@ -2299,7 +2299,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 236.22 52.07 0)
 			(effects
 				(font
@@ -2432,7 +2432,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 123.19 39.37 0)
 			(effects
 				(font
@@ -2565,7 +2565,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 182.88 29.21 0)
 			(effects
 				(font
@@ -2634,7 +2634,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 208.28 52.07 0)
 			(effects
 				(font
@@ -2702,7 +2702,7 @@
 				)
 			)
 		)
-			(property "Footprint" "raspberry-pi-pico:RPi_Pico_SMD_TH"
+			(property "Footprint" "local_rpi_pico:RPi_Pico_SMD_TH"
 			(at 317.5 72.39 90)
 			(effects
 				(font
@@ -2894,7 +2894,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 154.94 39.37 0)
 			(effects
 				(font
@@ -3027,7 +3027,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 123.19 62.23 0)
 			(effects
 				(font
@@ -3096,7 +3096,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 154.94 50.8 0)
 			(effects
 				(font
@@ -3165,7 +3165,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 182.88 50.8 0)
 			(effects
 				(font
@@ -3234,7 +3234,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 182.88 62.23 0)
 			(effects
 				(font
@@ -3367,7 +3367,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 154.94 62.23 0)
 			(effects
 				(font
@@ -3436,7 +3436,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 123.19 29.21 0)
 			(effects
 				(font
@@ -3633,7 +3633,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 208.28 63.5 0)
 			(effects
 				(font
@@ -3702,7 +3702,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 236.22 40.64 0)
 			(effects
 				(font
@@ -3771,7 +3771,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 236.22 30.48 0)
 			(effects
 				(font
@@ -3904,7 +3904,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 154.94 29.21 0)
 			(effects
 				(font
@@ -3973,7 +3973,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 123.19 50.8 0)
 			(effects
 				(font
@@ -4042,7 +4042,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 182.88 39.37 0)
 			(effects
 				(font
@@ -4239,7 +4239,7 @@
 				)
 			)
 		)
-		(property "Footprint" "kailh-choc-hotswap:switch_24"
+		(property "Footprint" "local_kailh_choc:switch_24"
 			(at 208.28 40.64 0)
 			(effects
 				(font
