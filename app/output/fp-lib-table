@@ -1,4 +1,11 @@
 (fp_lib_table
-  (lib (name "local_rpi_pico")(type "KiCad")(uri "${KIPRJMOD}/footprints/raspberry-pi-pico.pretty")(options "")(descr "Project local Raspberry Pi Pico footprints"))
-  (lib (name "local_kailh_choc")(type "KiCad")(uri "${KIPRJMOD}/footprints/kailh-choc-hotswap.pretty")(options "")(descr "Project local Kailh choc hotswap footprints"))
+  (lib (name "local_rpi_pico")(type "KiCad")
+       (uri "${KIPRJMOD}/footprints/raspberry-pi-pico.pretty")
+       (options "")(descr "Proj local RPi Pico footprints"))
+  (lib (name "local_kailh_choc")(type "KiCad")
+       (uri "${KIPRJMOD}/footprints/kailh-choc-hotswap.pretty")
+       (options "")(descr "Proj local Kailh choc hotswap"))
+  (lib (name "local_mount")(type "KiCad")
+       (uri "${KIPRJMOD}/footprints/mount.pretty")
+       (options "")(descr "Proj local mounting holes"))
 )

@@ -32,10 +32,10 @@ board = pcbnew.BOARD()
 # Units helper
 mm = pcbnew.FromMM
 
-# Set a simple rectangular outline on Edge.Cuts
+# Set a simple rectangular outline on Edge.Cuts (fixed board size)
 edge = board.GetLayerID('Edge.Cuts')
 x0, y0 = 0, 0
-x1, y1 = {req.board.width_mm}, {req.board.height_mm}
+x1, y1 = 300.0, 200.0
 
 def add_line(xa, ya, xb, yb):
     seg = pcbnew.PCB_SHAPE(board)
@@ -50,16 +50,28 @@ add_line(x1, y0, x1, y1)
 add_line(x1, y1, x0, y1)
 add_line(x0, y1, x0, y0)
 
-# Load footprints from project-local libs (fp-lib-table lives in project dir)
+#! Load footprints from project-local libs (fp-lib-table lives in project dir)
 proj = Path('{work_project_dir.as_posix()}')
 
+def move_if_exists(ref_name, x, y, rot=None):
+    for m in board.GetFootprints():
+        if m.GetReference() == ref_name:
+            m.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
+            if rot is not None:
+                m.SetOrientationDegrees(rot)
+            return True
+    return False
+
 def load_and_place(lib, fp, ref_name, x, y, rot):
-    # pcbnew.FootprintLoad accepts a .pretty dir path and footprint name (file stem).
+    # If footprint with this reference already exists, just move it
+    if move_if_exists(ref_name, x, y, rot):
+        return
+
+    # Otherwise, add new footprint
     pretty = proj / 'footprints' / lib
     stems = [p.stem for p in pretty.glob('*.kicad_mod')]
     name = fp
     if name not in stems:
-        # Find case-insensitive match
         for cand in stems:
             if cand.lower() == fp.lower():
                 name = cand
@@ -67,28 +79,39 @@ def load_and_place(lib, fp, ref_name, x, y, rot):
     mod = pcbnew.FootprintLoad(str(pretty), name)
     if not mod:
         msg = (
-            "Failed to load footprint: {{}}/{{}}; available={{}}".format(
-                lib,
-                fp,
-                stems,
-            )
+            "Failed to load footprint: "
+            + lib + "/" + fp + "; available=" + str(stems)
         )
         raise RuntimeError(msg)
-    # Set position, rotation, and reference
     mod.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
     mod.SetOrientationDegrees(rot)
     mod.SetReference(ref_name)
     board.Add(mod)
 
-# Place Pico (use U1 by default)
-load_and_place(
-    'raspberry-pi-pico.pretty',
-    'RPi_Pico_SMD_TH',
-    'U1',
-    {req.pico.x_mm},
-    {req.pico.y_mm},
-    {req.pico.rotation_deg},
-)
+# Place/move Pico (U1) to a fixed position
+load_and_place('raspberry-pi-pico.pretty', 'RPi_Pico_SMD_TH', 'U1', 150.0, 26.0, 0.0)
+
+# Move/add mounting holes to fixed positions
+HOLE_POS = [
+    ('H1', 125.0, 10.0),
+    ('H3', 10.0, 10.0),
+    ('H4', 10.0, 100.0),
+    ('H5', 10.0, 190.0),
+    ('H6', 125.0, 190.0),
+    ('H7', 175.0, 190.0),
+    ('H8', 290.0, 190.0),
+    ('H9', 290.0, 100.0),
+    ('H10', 290.0, 10.0),
+    ('H11', 175.0, 10.0),
+]
+for _r, _hx, _hy in HOLE_POS:
+    # Move if exists; otherwise add from local mount library
+    if not move_if_exists(_r, _hx, _hy):
+        pretty = proj / 'footprints' / 'mount.pretty'
+        target = pretty / 'MountingHole_3.2mm_M3.kicad_mod'
+        if pretty.exists() and target.exists():
+            # use directory path (.pretty) for FootprintLoad in headless mode
+            load_and_place('mount.pretty', 'MountingHole_3.2mm_M3', _r, _hx, _hy, 0.0)
 
 # Place switches
 switches = {[(s.ref, s.x_mm, s.y_mm, s.rotation_deg) for s in req.switches]}
