@@ -120,6 +120,26 @@ for ref_name, x, y, rot in switches:
 
 out_path = proj / 'StickLess.kicad_pcb'
 pcbnew.SaveBoard(str(out_path), board)
+# Hide drawing sheet in project local .kicad_prl
+prl = proj / 'StickLess.kicad_prl'
+try:
+    import json
+    if prl.exists():
+        data = json.loads(prl.read_text())
+    else:
+        data = dict()
+    if not isinstance(data.get('board'), dict):
+        data['board'] = dict()
+    vis = data['board'].get('visible_items')
+    if not isinstance(vis, list):
+        vis = []
+    if 'drawing_sheet' in vis:
+        vis.remove('drawing_sheet')
+    data['board']['visible_items'] = vis
+    data['meta'] = dict(filename='StickLess.kicad_prl', version=5)
+    prl.write_text(json.dumps(data, indent=2))
+except Exception:
+    pass
 print('WROTE', out_path)
 """
     driver = work_project_dir / "_build_pcb.py"
