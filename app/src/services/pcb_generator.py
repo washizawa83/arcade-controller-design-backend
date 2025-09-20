@@ -217,35 +217,10 @@ GPIO_TO_U1_PAD = {
     27: "32", 28: "34",
 }
 
-imported = (
-    import_nets_from_json_file(str(proj / 'net_map.json'))
-    or import_nets_from_board_file(str(proj / 'after.kicad_pcb'))
-)
+imported = import_nets_from_json_file(str(proj / 'net_map.json'))
 if not imported:
-    u1 = find_footprint(board, 'U1')
-    if u1 is not None:
-        for ref_name, _x, _y, _rot in switches:
-            m = re.match(r'^GPIO0?(\d+)$', ref_name, re.IGNORECASE)
-            if not m:
-                continue
-            gpio_num = int(m.group(1))
-            if gpio_num not in GPIO_TO_U1_PAD:
-                continue
-            net_name = f'GPIO{gpio_num}'
-            net = get_or_create_net(board, net_name)
-
-            # Assign U1 pad to this net
-            u1_pad_num = GPIO_TO_U1_PAD[gpio_num]
-            u1_pad = u1.FindPadByNumber(u1_pad_num)
-            if u1_pad is not None:
-                u1_pad.SetNet(net)
-
-            # Assign switch pad 1 to the same net
-            sw = find_footprint(board, ref_name)
-            if sw is not None:
-                sw_pad1 = sw.FindPadByNumber('1')
-                if sw_pad1 is not None:
-                    sw_pad1.SetNet(net)
+    # フォールバックは無効化（net_map.json のみ参照）
+    pass
 
 out_path = proj / 'StickLess.kicad_pcb'
 pcbnew.SaveBoard(str(out_path), board)
