@@ -118,8 +118,9 @@ switches = __SWITCHES__
 for ref_name, x, y, rot in switches:
     load_and_place('kailh-choc-hotswap.pretty', 'switch_24', ref_name, x, y, rot)
 
-# --- Assign nets from schematic-like intent (e.g., GPIO nets) ---
+# --- Assign nets from schematic-like intent (e.g., JSON map / after board / GPIO) ---
 import re
+import json
 
 def get_or_create_net(board, net_name: str):
     nets_by_name = board.GetNetsByName()
@@ -175,6 +176,38 @@ def import_nets_from_board_file(path_str: str) -> bool:
         print('IMPORTED_NETS_ERROR', e)
         return False
 
+def import_nets_from_json_file(path_str: str) -> bool:
+    try:
+        path = Path(path_str)
+        if not path.exists():
+            return False
+        raw = json.loads(path.read_text())
+        net_map = dict()
+        if isinstance(raw, list):
+            # [{"ref":"U1","pad":"12","net":"GPIO9"}, ...]
+            for e in raw:
+                ref = e.get('ref')
+                pad = e.get('pad')
+                net = e.get('net')
+                if not ref or pad is None or not net:
+                    continue
+                net_map[(str(ref), str(pad))] = str(net)
+        elif isinstance(raw, dict):
+            # {"U1": {"12": "GPIO9", "13": "GND"}, ...}
+            for ref, pads in raw.items():
+                if not isinstance(pads, dict):
+                    continue
+                for pad, net in pads.items():
+                    net_map[(str(ref), str(pad))] = str(net)
+        else:
+            return False
+        apply_net_map_to_board(board, net_map)
+        print('IMPORTED_NETS_JSON', path)
+        return True
+    except Exception as e:
+        print('IMPORTED_NETS_JSON_ERROR', e)
+        return False
+
 # Map Raspberry Pi Pico U1 pad numbers for GPIOx signals
 GPIO_TO_U1_PAD = {
     0:  "1",  1:  "2",  2:  "4",  3:  "5",  4:  "6",  5:  "7",
@@ -184,7 +217,10 @@ GPIO_TO_U1_PAD = {
     27: "32", 28: "34",
 }
 
-imported = import_nets_from_board_file(__AFTER_PCB__)
+imported = (
+    import_nets_from_json_file(str(proj / 'net_map.json'))
+    or import_nets_from_board_file(str(proj / 'after.kicad_pcb'))
+)
 if not imported:
     u1 = find_footprint(board, 'U1')
     if u1 is not None:
@@ -235,11 +271,9 @@ except Exception:
     pass
 print('WROTE', out_path)
 """
-    # Inject dynamic switches and after-board path into the script
+    # Inject dynamic switches into the script
     switches_literal = [(s.ref, s.x_mm, s.y_mm, s.rotation_deg) for s in req.switches]
     script = script.replace("__SWITCHES__", repr(switches_literal))
-    after_pcb_abs = Path("app/tmp/after.kicad_pcb").resolve()
-    script = script.replace("__AFTER_PCB__", repr(str(after_pcb_abs)))
 
     driver = work_project_dir / "_build_pcb.py"
     driver.write_text(script)

@@ -1,0 +1,11 @@
+[
+  { "ref": "U1", "pad": "12", "net": "GPIO9" },
+  { "ref": "GPIO09", "pad": "1", "net": "GPIO9" },
+
+  { "ref": "U1", "pad": "26", "net": "GPIO20" },
+  { "ref": "GPIO20", "pad": "1", "net": "GPIO20" },
+
+  { "ref": "U1", "pad": "27", "net": "GPIO21" },
+  { "ref": "GPIO21", "pad": "1", "net": "GPIO21" }
+]
+
