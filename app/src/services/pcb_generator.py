@@ -252,8 +252,11 @@ print('WROTE', out_path)
     return driver
 
 
-def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
-    """Copy template from app/datas, run pcbnew, zip, and return bytes."""
+def _create_project_dir(req: PCBRequest) -> Path:
+    """Create a working KiCad project directory and build initial board.
+
+    Returns the created project directory path.
+    """
     template = Path("app/datas").resolve()
     work_root = Path(tempfile.mkdtemp(prefix="pcb_"))
     work_project = work_root / "project"
@@ -279,13 +282,11 @@ def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
         import re
 
         sch_text = sch.read_text()
-        # Map any RPi Pico footprint nickname to local one
         sch_text = re.sub(
             r'(property\s+\"Footprint\"\s+\"\s*)(?:raspberry-pi-pico|RPi_Pico)(:RPi_Pico_SMD_TH)',
             r'\1local_rpi_pico\2',
             sch_text,
         )
-        # Map any kailh choc nickname to local one
         sch_text = re.sub(
             r'(property\s+\"Footprint\"\s+\"\s*)(?:kailh-choc-hotswap)(:switch_24)',
             r'\1local_kailh_choc\2',
@@ -293,13 +294,8 @@ def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
         )
         sch.write_text(sch_text)
 
-    # NOTE: Avoid deleting KiCad project cache files to preserve existing
-    # resolution context in the user's environment.
-
-    # Write driver and run via KiCad-bundled Python
     driver = _write_driver_script(work_project, req)
     env = os.environ.copy()
-    # Make KiCad binaries available if needed
     env.setdefault("KIPRJMOD", str(work_project))
 
     proc = subprocess.run(
@@ -311,14 +307,96 @@ def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
     )
     if proc.returncode != 0:
         raise RuntimeError(f"pcbnew generation failed: {proc.stderr}\n{proc.stdout}")
+    return work_project
 
-    # Zip project dir
+
+def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
+    """Build a project directory then zip and return bytes."""
+    work_project = _create_project_dir(req)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in work_project.rglob("*"):
             zf.write(p, arcname=p.relative_to(work_project))
-
     return buf.getvalue(), f"pcb_{uuid.uuid4().hex}.zip"
+
+
+def export_dsn_from_pcb(pcb_path: Path) -> bytes:
+    """Export a Specctra DSN from a .kicad_pcb using KiCad Python."""
+    work_root = Path(tempfile.mkdtemp(prefix="exp_dsn_"))
+    out_dsn = work_root / "out.dsn"
+    driver = work_root / "_export_dsn.py"
+    driver.write_text(
+        "\n".join(
+            [
+                "import pcbnew, wx",
+                "from pathlib import Path",
+                "_app = wx.App(False)",
+                f"pcb_path = Path(r'{pcb_path.as_posix()}')",
+                f"out_path = Path(r'{out_dsn.as_posix()}')",
+                "board = pcbnew.LoadBoard(str(pcb_path))",
+                "ok = False",
+                "try:",
+                "    board.ExportSpecctraDSN(str(out_path))",
+                "    ok = True",
+                "except Exception as e1:",
+                "    fn = getattr(pcbnew, 'ExportSpecctraDSN', None)",
+                "    if callable(fn):",
+                "        try:",
+                "            fn(board, str(out_path))",
+                "            ok = True",
+                "        except Exception as e2:",
+                "            print('EXPORT_DSN_ALT_FAILED', e2)",
+                "    else:",
+                "        print('EXPORT_DSN_METHOD_FAILED', e1)",
+                "if not ok:",
+                "    raise RuntimeError('DSN export failed')",
+            ]
+        )
+    )
+    proc = subprocess.run([KICAD_PY, str(driver)], capture_output=True, text=True)
+    if proc.returncode != 0 or not out_dsn.exists():
+        raise RuntimeError("Failed to export DSN: " + (proc.stderr or proc.stdout))
+    return out_dsn.read_bytes()
+
+
+def build_routed_project_zip(req: PCBRequest) -> tuple[bytes, str]:
+    """One-click pipeline: generate project, autoroute, apply session, zip project."""
+    work_project = _create_project_dir(req)
+    pcb_path = work_project / "StickLess.kicad_pcb"
+    # Export DSN from the built PCB
+    dsn_bytes = export_dsn_from_pcb(pcb_path)
+    # Run freerouting
+    ses_bytes = autoroute_dsn_to_ses(dsn_bytes)
+    # Apply SES to PCB
+    routed_bytes = apply_ses_to_pcb(pcb_path.read_bytes(), ses_bytes)
+    pcb_path.write_bytes(routed_bytes)
+    # Ensure PRL hides drawing sheet
+    prl = work_project / "StickLess.kicad_prl"
+    try:
+        import json
+        if prl.exists():
+            data = json.loads(prl.read_text())
+        else:
+            data = dict()
+        if not isinstance(data.get("board"), dict):
+            data["board"] = dict()
+        vis = data["board"].get("visible_items")
+        if not isinstance(vis, list):
+            vis = []
+        if "drawing_sheet" in vis:
+            vis.remove("drawing_sheet")
+        data["board"]["visible_items"] = vis
+        data["meta"] = dict(filename="StickLess.kicad_prl", version=5)
+        prl.write_text(json.dumps(data, indent=2))
+    except Exception:
+        pass
+
+    # Zip full project
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in work_project.rglob("*"):
+            zf.write(p, arcname=p.relative_to(work_project))
+    return buf.getvalue(), f"routed_{uuid.uuid4().hex}.zip"
 
 
 def autoroute_dsn_to_ses(dsn_bytes: bytes) -> bytes:

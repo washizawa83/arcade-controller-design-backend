@@ -8,6 +8,7 @@ from app.src.services.pcb_generator import (
     autoroute_dsn_to_ses,
     generate_project_zip,
     apply_ses_to_pcb,
+    build_routed_project_zip,
 )
 
 router = APIRouter(prefix="/api/v1/pcb", tags=["pcb"])
@@ -72,3 +73,10 @@ async def apply_ses(pcb: UploadFile = FILE_UPLOAD_PCB, ses: UploadFile = FILE_UP
         zf.writestr(f"{base}.kicad_prl", json.dumps(prl, indent=2))
     headers = {"Content-Disposition": f'attachment; filename="{base}.zip"'}
     return Response(content=buf.getvalue(), media_type="application/zip", headers=headers)
+
+
+@router.post("/generate-design-data")
+async def generate_design_data(req: PCBRequest):
+    data, filename = build_routed_project_zip(req)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=data, media_type="application/zip", headers=headers)
