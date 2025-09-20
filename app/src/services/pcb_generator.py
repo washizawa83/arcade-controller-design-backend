@@ -285,3 +285,47 @@ def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
             zf.write(p, arcname=p.relative_to(work_project))
 
     return buf.getvalue(), f"pcb_{uuid.uuid4().hex}.zip"
+
+
+def autoroute_dsn_to_ses(dsn_bytes: bytes) -> bytes:
+    """Run Freerouting CLI on provided DSN bytes and return SES bytes.
+
+    Requires FREEROUTING_JAR env var or a .jar under ~/freerouting/.
+    Uses -mt 1 for stable optimization.
+    """
+    work_root = Path(tempfile.mkdtemp(prefix="fr_"))
+    dsn_path = work_root / "in.dsn"
+    ses_path = work_root / "out.ses"
+    dsn_path.write_bytes(dsn_bytes)
+
+    jar = os.environ.get("FREEROUTING_JAR")
+    if not jar:
+        home = Path.home() / "freerouting"
+        jars = sorted(home.glob("*.jar"))
+        if not jars:
+            raise RuntimeError("Freerouting JAR not found. Set FREEROUTING_JAR or place a .jar under ~/freerouting/")
+        jar = str(jars[0])
+
+    proc = subprocess.run(
+        [
+            "java",
+            "-Djava.awt.headless=true",
+            "-jar",
+            jar,
+            "-de",
+            str(dsn_path),
+            "-do",
+            str(ses_path),
+            "-mt",
+            "1",
+            "-l",
+            "en",
+        ],
+        cwd=str(Path(jar).resolve().parent),
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0 or not ses_path.exists():
+        msg = "Freerouting failed: " + proc.stderr + "\n" + proc.stdout
+        raise RuntimeError(msg)
+    return ses_path.read_bytes()
