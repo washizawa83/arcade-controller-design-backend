@@ -976,6 +976,30 @@ def apply_ses_to_pcb(pcb_bytes: bytes, ses_bytes: bytes) -> bytes:
                 "    except Exception:",
                 "        pass",
                 "    pcbnew.SaveBoard(str(out_path), board)",
+                "    # Write a local .kicad_prl next to the board with drawing sheet hidden",
+                "    try:",
+                "        import json as _json",
+                "        prl = out_path.with_suffix('.kicad_prl')",
+                "        if prl.exists():",
+                "            data = _json.loads(prl.read_text())",
+                "        else:",
+                "            data = dict()",
+                "        if not isinstance(data.get('board'), dict):",
+                "            data['board'] = dict()",
+                "        vis = data['board'].get('visible_items')",
+                "        if not isinstance(vis, list):",
+                "            vis = []",
+                "        if 'drawing_sheet' in vis:",
+                "            vis.remove('drawing_sheet')",
+                "        else:",
+                "            # Ensure a sane default visibility set without drawing sheet",
+                "            base = ['vias','footprint_text','footprint_anchors','ratsnest','grid','footprints_front','footprints_back','footprint_values','footprint_references','tracks','drc_errors','bitmaps','pads','zones','drc_warnings','drc_exclusions','locked_item_shadows','conflict_shadows','shapes']",
+                "            vis = base",
+                "        data['board']['visible_items'] = vis",
+                "        data['meta'] = dict(filename=str(prl.name), version=5)",
+                "        prl.write_text(_json.dumps(data, indent=2))",
+                "    except Exception:",
+                "        pass",
                 "else:",
                 "    raise RuntimeError('Specctra session import failed')",
             ]
@@ -1127,6 +1151,22 @@ def apply_ses_to_pcb(pcb_bytes: bytes, ses_bytes: bytes) -> bytes:
                         + "\t)"
                     )
                 pcb_text = pcb_text[:insert_at] + "".join(blocks) + pcb_text[insert_at:]
+        # Save adjacent PRL to hide drawing sheet for this generated board
+        try:
+            import json as _json
+            prl = out_pcb.with_suffix('.kicad_prl')
+            data = dict()
+            data['board'] = dict()
+            data['board']['visible_items'] = [
+                'vias','footprint_text','footprint_anchors','ratsnest','grid',
+                'footprints_front','footprints_back','footprint_values','footprint_references',
+                'tracks','drc_errors','bitmaps','pads','zones','drc_warnings','drc_exclusions',
+                'locked_item_shadows','conflict_shadows','shapes'
+            ]
+            data['meta'] = dict(filename=str(prl.name), version=5)
+            prl.write_text(_json.dumps(data, indent=2))
+        except Exception:
+            pass
         return pcb_text.encode()
     except Exception:
         # If any error in post-process, return original bytes

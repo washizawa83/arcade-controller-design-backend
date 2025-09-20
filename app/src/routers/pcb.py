@@ -1,4 +1,7 @@
 from fastapi import APIRouter, File as FastAPIFile, HTTPException, Response, UploadFile
+import io
+import json
+import zipfile
 
 from app.src.schemas.pcb import PCBRequest
 from app.src.services.pcb_generator import (
@@ -50,8 +53,22 @@ async def apply_ses(pcb: UploadFile = FILE_UPLOAD_PCB, ses: UploadFile = FILE_UP
         out_bytes = apply_ses_to_pcb(pcb_bytes, ses_bytes)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from None
-    base = pcb.filename.rsplit(".", 1)[0]
-    headers = {
-        "Content-Disposition": f'attachment; filename="{base}-routed.kicad_pcb"'
+    # Always include a .kicad_prl that hides the drawing sheet for better UX
+    base = pcb.filename.rsplit(".", 1)[0] + "-routed"
+    prl = {
+        "board": {
+            "visible_items": [
+                "vias","footprint_text","footprint_anchors","ratsnest","grid",
+                "footprints_front","footprints_back","footprint_values","footprint_references",
+                "tracks","drc_errors","bitmaps","pads","zones","drc_warnings","drc_exclusions",
+                "locked_item_shadows","conflict_shadows","shapes"
+            ]
+        },
+        "meta": {"filename": f"{base}.kicad_prl", "version": 5},
     }
-    return Response(content=out_bytes, media_type="application/octet-stream", headers=headers)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"{base}.kicad_pcb", out_bytes)
+        zf.writestr(f"{base}.kicad_prl", json.dumps(prl, indent=2))
+    headers = {"Content-Disposition": f'attachment; filename="{base}.zip"'}
+    return Response(content=buf.getvalue(), media_type="application/zip", headers=headers)
