@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.src.config import get_settings
-from app.src.routers import health
+from app.src.routers import health, pcb
 
 # Get application settings
 settings = get_settings()
@@ -29,6 +29,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(pcb.router)
 
 
 @app.get("/")
