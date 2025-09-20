@@ -19,7 +19,7 @@ KICAD_PY = (
 
 def _write_driver_script(work_project_dir: Path, req: PCBRequest) -> Path:
     """Create a small Python driver that uses pcbnew to build a .kicad_pcb."""
-    script = f"""
+    script = r"""
 import pcbnew
 import wx
 from pathlib import Path
@@ -51,7 +51,7 @@ add_line(x1, y1, x0, y1)
 add_line(x0, y1, x0, y0)
 
 #! Load footprints from project-local libs (fp-lib-table lives in project dir)
-proj = Path('{work_project_dir.as_posix()}')
+proj = Path('.')
 
 def move_if_exists(ref_name, x, y, rot=None):
     for m in board.GetFootprints():
@@ -114,9 +114,102 @@ for _r, _hx, _hy in HOLE_POS:
             load_and_place('mount.pretty', 'MountingHole_3.2mm_M3', _r, _hx, _hy, 0.0)
 
 # Place switches
-switches = {[(s.ref, s.x_mm, s.y_mm, s.rotation_deg) for s in req.switches]}
+switches = __SWITCHES__
 for ref_name, x, y, rot in switches:
     load_and_place('kailh-choc-hotswap.pretty', 'switch_24', ref_name, x, y, rot)
+
+# --- Assign nets from schematic-like intent (e.g., GPIO nets) ---
+import re
+
+def get_or_create_net(board, net_name: str):
+    nets_by_name = board.GetNetsByName()
+    if net_name in nets_by_name:
+        return nets_by_name[net_name]
+    net = pcbnew.NETINFO_ITEM(board, net_name)
+    board.Add(net)
+    return net
+
+def find_footprint(board, ref: str):
+    for m in board.GetFootprints():
+        if m.GetReference() == ref:
+            return m
+    return None
+
+# Build a mapping of (reference, pad_name) -> net_name from an existing board
+def build_net_map_from_board(src_board):
+    net_map = dict()
+    for m in src_board.GetFootprints():
+        ref = m.GetReference()
+        for p in m.Pads():
+            n = p.GetNet()
+            if not n:
+                continue
+            name = n.GetNetname()
+            if not name:
+                continue
+            net_map[(ref, p.GetPadName())] = name
+    return net_map
+
+def apply_net_map_to_board(dst_board, net_map):
+    for (ref, pad_name), net_name in net_map.items():
+        fp = find_footprint(dst_board, ref)
+        if fp is None:
+            continue
+        pad = fp.FindPadByNumber(str(pad_name))
+        if pad is None:
+            continue
+        net = get_or_create_net(dst_board, net_name)
+        pad.SetNet(net)
+
+def import_nets_from_board_file(path_str: str) -> bool:
+    try:
+        path = Path(path_str)
+        if not path.exists():
+            return False
+        other = pcbnew.LoadBoard(str(path))
+        net_map = build_net_map_from_board(other)
+        apply_net_map_to_board(board, net_map)
+        print('IMPORTED_NETS_FROM', path)
+        return True
+    except Exception as e:
+        print('IMPORTED_NETS_ERROR', e)
+        return False
+
+# Map Raspberry Pi Pico U1 pad numbers for GPIOx signals
+GPIO_TO_U1_PAD = {
+    0:  "1",  1:  "2",  2:  "4",  3:  "5",  4:  "6",  5:  "7",
+    6:  "9",  7:  "10", 8:  "11", 9:  "12", 10: "14", 11: "15",
+    12: "16", 13: "17", 14: "19", 15: "20", 16: "21", 17: "22",
+    18: "24", 19: "25", 20: "26", 21: "27", 22: "29", 26: "31",
+    27: "32", 28: "34",
+}
+
+imported = import_nets_from_board_file(__AFTER_PCB__)
+if not imported:
+    u1 = find_footprint(board, 'U1')
+    if u1 is not None:
+        for ref_name, _x, _y, _rot in switches:
+            m = re.match(r'^GPIO0?(\d+)$', ref_name, re.IGNORECASE)
+            if not m:
+                continue
+            gpio_num = int(m.group(1))
+            if gpio_num not in GPIO_TO_U1_PAD:
+                continue
+            net_name = f'GPIO{gpio_num}'
+            net = get_or_create_net(board, net_name)
+
+            # Assign U1 pad to this net
+            u1_pad_num = GPIO_TO_U1_PAD[gpio_num]
+            u1_pad = u1.FindPadByNumber(u1_pad_num)
+            if u1_pad is not None:
+                u1_pad.SetNet(net)
+
+            # Assign switch pad 1 to the same net
+            sw = find_footprint(board, ref_name)
+            if sw is not None:
+                sw_pad1 = sw.FindPadByNumber('1')
+                if sw_pad1 is not None:
+                    sw_pad1.SetNet(net)
 
 out_path = proj / 'StickLess.kicad_pcb'
 pcbnew.SaveBoard(str(out_path), board)
@@ -142,6 +235,12 @@ except Exception:
     pass
 print('WROTE', out_path)
 """
+    # Inject dynamic switches and after-board path into the script
+    switches_literal = [(s.ref, s.x_mm, s.y_mm, s.rotation_deg) for s in req.switches]
+    script = script.replace("__SWITCHES__", repr(switches_literal))
+    after_pcb_abs = Path("app/tmp/after.kicad_pcb").resolve()
+    script = script.replace("__AFTER_PCB__", repr(str(after_pcb_abs)))
+
     driver = work_project_dir / "_build_pcb.py"
     driver.write_text(script)
     return driver
