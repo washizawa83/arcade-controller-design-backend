@@ -149,8 +149,12 @@ for _r, _hx, _hy in HOLE_POS:
 
 # Place switches
 switches = __SWITCHES__
-for ref_name, x, y, rot in switches:
-    load_and_place('kailh-choc-hotswap.pretty', 'switch_24', ref_name, x, y, rot)
+for ref_name, x, y, rot, size in switches:
+    fp_name = f"switch_{int(size)}"
+    # fallback to 24 if not recognized
+    if fp_name not in ['switch_18', 'switch_24', 'switch_30']:
+        fp_name = 'switch_24'
+    load_and_place('kailh-choc-hotswap.pretty', fp_name, ref_name, x, y, rot)
 
 # --- Assign nets from schematic-like intent (e.g., JSON map / GPIO) ---
 import re
@@ -244,7 +248,7 @@ except Exception:
 print('WROTE', out_path)
 """
     # Inject dynamic switches into the script
-    switches_literal = [(s.ref, s.x_mm, s.y_mm, s.rotation_deg) for s in req.switches]
+    switches_literal = [(s.ref, s.x_mm, s.y_mm, s.rotation_deg, getattr(s, 'size', 24)) for s in req.switches]
     script = script.replace("__SWITCHES__", repr(switches_literal))
 
     driver = work_project_dir / "_build_pcb.py"
