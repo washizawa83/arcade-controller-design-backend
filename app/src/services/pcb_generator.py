@@ -118,7 +118,7 @@ switches = __SWITCHES__
 for ref_name, x, y, rot in switches:
     load_and_place('kailh-choc-hotswap.pretty', 'switch_24', ref_name, x, y, rot)
 
-# --- Assign nets from schematic-like intent (e.g., JSON map / after board / GPIO) ---
+# --- Assign nets from schematic-like intent (e.g., JSON map / GPIO) ---
 import re
 import json
 
@@ -136,45 +136,7 @@ def find_footprint(board, ref: str):
             return m
     return None
 
-# Build a mapping of (reference, pad_name) -> net_name from an existing board
-def build_net_map_from_board(src_board):
-    net_map = dict()
-    for m in src_board.GetFootprints():
-        ref = m.GetReference()
-        for p in m.Pads():
-            n = p.GetNet()
-            if not n:
-                continue
-            name = n.GetNetname()
-            if not name:
-                continue
-            net_map[(ref, p.GetPadName())] = name
-    return net_map
-
-def apply_net_map_to_board(dst_board, net_map):
-    for (ref, pad_name), net_name in net_map.items():
-        fp = find_footprint(dst_board, ref)
-        if fp is None:
-            continue
-        pad = fp.FindPadByNumber(str(pad_name))
-        if pad is None:
-            continue
-        net = get_or_create_net(dst_board, net_name)
-        pad.SetNet(net)
-
-def import_nets_from_board_file(path_str: str) -> bool:
-    try:
-        path = Path(path_str)
-        if not path.exists():
-            return False
-        other = pcbnew.LoadBoard(str(path))
-        net_map = build_net_map_from_board(other)
-        apply_net_map_to_board(board, net_map)
-        print('IMPORTED_NETS_FROM', path)
-        return True
-    except Exception as e:
-        print('IMPORTED_NETS_ERROR', e)
-        return False
+# Build a mapping of (reference, pad_name) -> net_name from JSON
 
 def import_nets_from_json_file(path_str: str) -> bool:
     try:
@@ -201,25 +163,26 @@ def import_nets_from_json_file(path_str: str) -> bool:
                     net_map[(str(ref), str(pad))] = str(net)
         else:
             return False
-        apply_net_map_to_board(board, net_map)
+        # apply
+        for (ref, pad_name), net_name in net_map.items():
+            fp = find_footprint(board, ref)
+            if fp is None:
+                continue
+            pad = fp.FindPadByNumber(str(pad_name))
+            if pad is None:
+                continue
+            net_obj = get_or_create_net(board, net_name)
+            pad.SetNet(net_obj)
         print('IMPORTED_NETS_JSON', path)
         return True
     except Exception as e:
         print('IMPORTED_NETS_JSON_ERROR', e)
         return False
 
-# Map Raspberry Pi Pico U1 pad numbers for GPIOx signals
-GPIO_TO_U1_PAD = {
-    0:  "1",  1:  "2",  2:  "4",  3:  "5",  4:  "6",  5:  "7",
-    6:  "9",  7:  "10", 8:  "11", 9:  "12", 10: "14", 11: "15",
-    12: "16", 13: "17", 14: "19", 15: "20", 16: "21", 17: "22",
-    18: "24", 19: "25", 20: "26", 21: "27", 22: "29", 26: "31",
-    27: "32", 28: "34",
-}
-
+# Only net_map.json is used
 imported = import_nets_from_json_file(str(proj / 'net_map.json'))
 if not imported:
-    # フォールバックは無効化（net_map.json のみ参照）
+    # No fallback by design
     pass
 
 out_path = proj / 'StickLess.kicad_pcb'
@@ -256,8 +219,8 @@ print('WROTE', out_path)
 
 
 def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
-    """Copy template, call pcbnew to generate .kicad_pcb, zip, and return bytes."""
-    template = Path("app/output").resolve()
+    """Copy template from app/datas, run pcbnew, zip, and return bytes."""
+    template = Path("app/datas").resolve()
     work_root = Path(tempfile.mkdtemp(prefix="pcb_"))
     work_project = work_root / "project"
     shutil.copytree(template, work_project, dirs_exist_ok=True)
@@ -284,13 +247,13 @@ def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
         sch_text = sch.read_text()
         # Map any RPi Pico footprint nickname to local one
         sch_text = re.sub(
-            r'(property\s+"Footprint"\s+"\s*)(?:raspberry-pi-pico|RPi_Pico)(:RPi_Pico_SMD_TH)',
+            r'(property\s+\"Footprint\"\s+\"\s*)(?:raspberry-pi-pico|RPi_Pico)(:RPi_Pico_SMD_TH)',
             r'\1local_rpi_pico\2',
             sch_text,
         )
         # Map any kailh choc nickname to local one
         sch_text = re.sub(
-            r'(property\s+"Footprint"\s+"\s*)(?:kailh-choc-hotswap)(:switch_24)',
+            r'(property\s+\"Footprint\"\s+\"\s*)(?:kailh-choc-hotswap)(:switch_24)',
             r'\1local_kailh_choc\2',
             sch_text,
         )
