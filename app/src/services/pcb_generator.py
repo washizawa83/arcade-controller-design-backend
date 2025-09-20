@@ -17,6 +17,39 @@ KICAD_PY = (
 )
 
 
+def _zip_directory(root: Path) -> bytes:
+    """Zip all contents under 'root' and return bytes."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in root.rglob("*"):
+            zf.write(p, arcname=p.relative_to(root))
+    return buf.getvalue()
+
+
+def _ensure_prl_hides_drawing_sheet(prl_path: Path) -> None:
+    """Create or update a .kicad_prl to hide drawing sheet."""
+    try:
+        import json
+
+        if prl_path.exists():
+            data = json.loads(prl_path.read_text())
+        else:
+            data = {}
+        if not isinstance(data.get("board"), dict):
+            data["board"] = {}
+        vis = data["board"].get("visible_items")
+        if not isinstance(vis, list):
+            vis = []
+        if "drawing_sheet" in vis:
+            vis.remove("drawing_sheet")
+        data["board"]["visible_items"] = vis
+        data["meta"] = dict(filename=prl_path.name, version=5)
+        prl_path.write_text(json.dumps(data, indent=2))
+    except Exception:
+        # Prefer being non-fatal; viewing option only
+        pass
+
+
 def _write_driver_script(work_project_dir: Path, req: PCBRequest) -> Path:
     """Create a small Python driver that uses pcbnew to build a .kicad_pcb."""
     script = r"""
@@ -317,11 +350,7 @@ def _create_project_dir(req: PCBRequest) -> Path:
 def generate_project_zip(req: PCBRequest) -> tuple[bytes, str]:
     """Build a project directory then zip and return bytes."""
     work_project = _create_project_dir(req)
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for p in work_project.rglob("*"):
-            zf.write(p, arcname=p.relative_to(work_project))
-    return buf.getvalue(), f"pcb_{uuid.uuid4().hex}.zip"
+    return _zip_directory(work_project), f"pcb_{uuid.uuid4().hex}.zip"
 
 
 def export_dsn_from_pcb(pcb_path: Path) -> bytes:
@@ -376,31 +405,10 @@ def build_routed_project_zip(req: PCBRequest) -> tuple[bytes, str]:
     pcb_path.write_bytes(routed_bytes)
     # Ensure PRL hides drawing sheet
     prl = work_project / "StickLess.kicad_prl"
-    try:
-        import json
-        if prl.exists():
-            data = json.loads(prl.read_text())
-        else:
-            data = dict()
-        if not isinstance(data.get("board"), dict):
-            data["board"] = dict()
-        vis = data["board"].get("visible_items")
-        if not isinstance(vis, list):
-            vis = []
-        if "drawing_sheet" in vis:
-            vis.remove("drawing_sheet")
-        data["board"]["visible_items"] = vis
-        data["meta"] = dict(filename="StickLess.kicad_prl", version=5)
-        prl.write_text(json.dumps(data, indent=2))
-    except Exception:
-        pass
+    _ensure_prl_hides_drawing_sheet(prl)
 
     # Zip full project
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for p in work_project.rglob("*"):
-            zf.write(p, arcname=p.relative_to(work_project))
-    return buf.getvalue(), f"routed_{uuid.uuid4().hex}.zip"
+    return _zip_directory(work_project), f"routed_{uuid.uuid4().hex}.zip"
 
 
 def autoroute_dsn_to_ses(dsn_bytes: bytes) -> bytes:
@@ -1234,21 +1242,8 @@ def apply_ses_to_pcb(pcb_bytes: bytes, ses_bytes: bytes) -> bytes:
                     )
                 pcb_text = pcb_text[:insert_at] + "".join(blocks) + pcb_text[insert_at:]
         # Save adjacent PRL to hide drawing sheet for this generated board
-        try:
-            import json as _json
-            prl = out_pcb.with_suffix('.kicad_prl')
-            data = dict()
-            data['board'] = dict()
-            data['board']['visible_items'] = [
-                'vias','footprint_text','footprint_anchors','ratsnest','grid',
-                'footprints_front','footprints_back','footprint_values','footprint_references',
-                'tracks','drc_errors','bitmaps','pads','zones','drc_warnings','drc_exclusions',
-                'locked_item_shadows','conflict_shadows','shapes'
-            ]
-            data['meta'] = dict(filename=str(prl.name), version=5)
-            prl.write_text(_json.dumps(data, indent=2))
-        except Exception:
-            pass
+        prl = out_pcb.with_suffix('.kicad_prl')
+        _ensure_prl_hides_drawing_sheet(prl)
         return pcb_text.encode()
     except Exception:
         # If any error in post-process, return original bytes

@@ -11,10 +11,13 @@
 
 ```
 app/output/
-├── RPi_Pico_SMD_TH.kicad_mod
 ├── StickLess.kicad_pro
 ├── StickLess.kicad_sch
-└── Switch_24.kicad_mod
+├── footprints/
+│   ├── raspberry-pi-pico.pretty/RPi_Pico_SMD_TH.kicad_mod
+│   ├── kailh-choc-hotswap.pretty/switch_18.kicad_mod
+│   ├── kailh-choc-hotswap.pretty/switch_24.kicad_mod
+│   └── kailh-choc-hotswap.pretty/switch_30.kicad_mod
 ```
 
 ### 3. フットプリント参照修正

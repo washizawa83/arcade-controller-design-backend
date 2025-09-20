@@ -21,32 +21,32 @@
 kicad app/datas/StickLess.kicad_pro
 ```
 
-### 2. フットプリント関連付けの修正
+### 2. フットプリント関連付けの修正（プロジェクト内ローカルライブラリ）
 
 #### 必要な修正:
 
-| 回路図の参照名                                          | 実際のファイル                       | 修正方法             |
-| ------------------------------------------------------- | ------------------------------------ | -------------------- |
-| `Switch_Keyboard_Cherry_MX_LP:Cherry-MX-Low-Profile-24` | `Switch_24.kicad_mod`                | フットプリント名変更 |
-| `Switch_Keyboard_Cherry_MX_LP:Cherry-MX-Low-Profile`    | `Cherry-MX-Low-Profile.kicad_mod`    | ✅ 一致              |
-| `Switch_Keyboard_Cherry_MX_LP:Cherry-MX-Low-Profile-30` | `Cherry-MX-Low-Profile-30.kicad_mod` | ✅ 一致              |
-| `MountingHole:MountingHole_6mm`                         | `MountingHole_6mm.kicad_mod`         | ✅ 一致              |
-| `RP2040-Zero:RP2040-Zero`                               | `RPi_Pico_SMD_TH.kicad_mod`          | フットプリント変更   |
+| 回路図の参照名（例）                | プロジェクト内フットプリント（ローカル）                                  | 備考 |
+| ----------------------------------- | ------------------------------------------------------------------------- | ---- |
+| `kailh-choc-hotswap:switch_24` など | `app/datas/footprints/kailh-choc-hotswap.pretty/switch_18.kicad_mod`      | 18mm |
+|                                     | `app/datas/footprints/kailh-choc-hotswap.pretty/switch_24.kicad_mod`      | 24mm |
+|                                     | `app/datas/footprints/kailh-choc-hotswap.pretty/switch_30.kicad_mod`      | 30mm |
+| `raspberry-pi-pico:RPi_Pico_SMD_TH` | `app/datas/footprints/raspberry-pi-pico.pretty/RPi_Pico_SMD_TH.kicad_mod` |      |
+| `mount:MountingHole_3.2mm_M3`       | `app/datas/footprints/mount.pretty/MountingHole_3.2mm_M3.kicad_mod`       |      |
 
 #### 修正手順:
 
-**方法 1: フットプリントエディタで名前変更**
+**方法 1: ローカルライブラリ（fp-lib-table）を利用**
 
-1. KiCad フットプリントエディタを開く
-2. `Switch_24.kicad_mod`を開く
-3. ファイル → 名前を付けて保存 → `Cherry-MX-Low-Profile-24.kicad_mod`
-4. フットプリント名を `Cherry-MX-Low-Profile-24` に変更
+本プロジェクトでは `fp-lib-table` にローカルニックネーム
+`local_kailh_choc`／`local_rpi_pico` を定義しています。回路図のフットプリント関連付けで
+これらのライブラリから `switch_18/24/30` や `RPi_Pico_SMD_TH` を選択してください。
 
 **方法 2: 回路図で参照変更（推奨）**
 
 1. 回路図エディタを開く
 2. ツール → フットプリント関連付けツール
-3. 各シンボルのフットプリントを適切なものに変更
+3. 各シンボルのフットプリントを `local_kailh_choc:switch_18/24/30` や
+   `local_rpi_pico:RPi_Pico_SMD_TH` に変更
 
 ### 3. ネットリスト生成と PCB 作成
 
