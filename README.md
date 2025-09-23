@@ -152,10 +152,114 @@ uv run pytest
 | `DATABASE_URL`    | "sqlite:///./arcade_controller.db"                 | データベース URL           |
 | `SECRET_KEY`      | "your-secret-key-change-this-in-production"        | JWT 秘密鍵                 |
 
+## デプロイ
+
+### AWS ECS Fargate デプロイ
+
+このプロジェクトは AWS ECS Fargate にデプロイされています。
+
+#### デプロイスクリプト
+
+コード修正後の再デプロイは `deploy.sh` スクリプトを使用して簡単に行えます：
+
+```bash
+# 基本的なデプロイ（タイムスタンプタグ）
+./deploy.sh
+
+# カスタムタグでデプロイ
+./deploy.sh "feature-xyz"
+```
+
+#### デプロイスクリプトの機能
+
+- Docker イメージのビルドと ECR へのプッシュ
+- ECS タスク定義の自動更新
+- サービスの強制再デプロイ
+- パブリック IP の自動取得
+- テスト用 curl コマンドの表示
+
+#### 必要な AWS 権限
+
+デプロイスクリプトを実行するには以下の AWS 権限が必要です：
+
+- `AmazonEC2ContainerRegistryFullAccess`
+- `AmazonECS_FullAccess`
+- `CloudWatchLogsFullAccess`
+- `AmazonEC2FullAccess`
+
+#### 環境変数
+
+デプロイ前に以下の環境変数を設定してください：
+
+```bash
+export AWS_PROFILE="your-aws-profile"  # デフォルト: new-acct
+export AWS_REGION="ap-northeast-1"     # デフォルト: ap-northeast-1
+```
+
+#### デプロイ後の確認
+
+デプロイ完了後、以下のコマンドで API の動作を確認できます：
+
+```bash
+# ヘルスチェック
+curl http://<PUBLIC_IP>:8080/health
+
+# PCB生成API テスト
+curl -X POST "http://<PUBLIC_IP>:8080/api/v1/pcb/generate-design-data" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "switches": [
+      {
+        "x_mm": 100,
+        "y_mm": 100,
+        "rotation_deg": 0,
+        "ref": "SW1",
+        "size": 24
+      }
+    ],
+    "units": "mm"
+  }' \
+  -o "routed_project.zip"
+```
+
+### API エンドポイント
+
+#### PCB 生成関連
+
+- `POST /api/v1/pcb/generate` - PCB 生成のみ
+- `POST /api/v1/pcb/autoroute` - 自動配線のみ
+- `POST /api/v1/pcb/apply-ses` - SES ファイル適用のみ
+- `POST /api/v1/pcb/generate-design-data` - **統合 API（推奨）** - PCB 生成から配線まで一括実行
+
+#### リクエスト形式
+
+```json
+{
+  "switches": [
+    {
+      "x_mm": 100,
+      "y_mm": 100,
+      "rotation_deg": 0,
+      "ref": "SW1",
+      "size": 24
+    }
+  ],
+  "units": "mm"
+}
+```
+
+#### パラメータ説明
+
+- `x_mm`, `y_mm`: ボタンの座標（ミリメートル）
+- `rotation_deg`: ボタンの回転角度（度）
+- `ref`: ボタンの参照名（SW1, SW2 など）
+- `size`: ボタンサイズ（18, 24, 30 のいずれか）
+- `units`: 単位（"mm"を推奨）
+
 ## 今後の拡張
 
 - データベース統合（SQLAlchemy, Alembic）
 - 認証・認可システム
 - API バージョニング
 - ログシステム
-- Docker コンテナ化
+- パフォーマンス最適化
