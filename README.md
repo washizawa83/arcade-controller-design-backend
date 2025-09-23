@@ -83,13 +83,37 @@ backend/
 
 ### サーバー起動
 
+#### 開発環境（Docker 使用 - 推奨）
+
 ```bash
-# スクリプトを使用
+# 開発サーバー起動（本番環境と同じDocker環境）
 ./scripts/dev.sh
 
-# または直接uvicornを使用
+# 開発サーバー停止
+./scripts/dev-stop.sh
+
+# ログ確認
+./scripts/dev-logs.sh
+
+# コンテナ内シェルアクセス
+./scripts/dev-shell.sh
+```
+
+**開発環境の特徴:**
+
+- 本番環境と同じ Docker コンテナで動作
+- KiCad と Freerouting が利用可能
+- ホットリロード機能付き
+- ポート 8080 で起動
+
+#### 軽量開発環境（Docker 不使用）
+
+```bash
+# 直接uvicornを使用（KiCad/Freeroutingは使用不可）
 uv run uvicorn app.src.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+**注意:** 軽量環境では PCB 生成 API は動作しません。完全なテストには Docker 環境が必要です。
 
 ### コード品質
 
