@@ -40,12 +40,13 @@ echo "✅ イメージプッシュ完了: $REPO_URI:$TAG"
 echo "📝 タスク定義更新中..."
 TD_ARN=$(aws ecs describe-services --cluster "$APP_NAME" --services "$APP_NAME-svc" --region "$AWS_REGION" --profile "$AWS_PROFILE" --query 'services[0].taskDefinition' --output text)
 
-aws ecs describe-task-definition --task-definition "$TD_ARN" --region "$AWS_REGION" --profile "$AWS_PROFILE" --query 'taskDefinition' > td.json
+aws ecs describe-task-definition --task-definition "$TD_ARN" --region "$AWS_REGION" --profile "$AWS_PROFILE" --query 'taskDefinition' > /tmp/td-current.json
 
 # 新しいタスク定義を作成
-python3 - <<EOF
+export IMAGE_REF="$REPO_URI:$TAG"
+python3 -c "
 import json, os
-with open('td.json') as f:
+with open('/tmp/td-current.json') as f:
     td = json.load(f)
 
 # 不要なフィールドを削除
@@ -53,18 +54,21 @@ for k in ['revision','status','taskDefinitionArn','requiresAttributes','compatib
     td.pop(k, None)
 
 # AMD64ランタイムを強制
-td['runtimePlatform'] = {"cpuArchitecture":"X86_64","operatingSystemFamily":"LINUX"}
+td['runtimePlatform'] = {'cpuArchitecture':'X86_64','operatingSystemFamily':'LINUX'}
 
 # イメージを更新
 img = os.environ['IMAGE_REF']
 if td['containerDefinitions']:
     td['containerDefinitions'][0]['image'] = img
 
-print(json.dumps(td))
-EOF > td-new.json
+with open('/tmp/td-new.json', 'w') as f:
+    json.dump(td, f)
+
+print('New task definition created')
+"
 
 # 新しいタスク定義を登録
-NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://td-new.json --region "$AWS_REGION" --profile "$AWS_PROFILE" --query 'taskDefinition.taskDefinitionArn' --output text)
+NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file:///tmp/td-new.json --region "$AWS_REGION" --profile "$AWS_PROFILE" --query 'taskDefinition.taskDefinitionArn' --output text)
 echo "✅ 新しいタスク定義登録完了: $NEW_TD_ARN"
 
 # サービス更新
@@ -103,6 +107,6 @@ echo "  -d '{\"switches\":[{\"x_mm\":100,\"y_mm\":100,\"rotation_deg\":0,\"ref\"
 echo "  -o \"routed_project.zip\""
 
 # 一時ファイル削除
-rm -f td.json td-new.json
+rm -f /tmp/td-current.json /tmp/td-new.json
 
 echo "✨ デプロイスクリプト完了"

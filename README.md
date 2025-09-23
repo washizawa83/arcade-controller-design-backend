@@ -23,10 +23,18 @@ backend/
 │       │   └── __init__.py
 │       └── utils/               # ユーティリティ関数
 │           └── __init__.py
+├── aws-config/                  # AWS設定ファイル
+│   ├── taskdef.json            # ECSタスク定義テンプレート
+│   └── README.md               # AWS設定ファイルの説明
 ├── scripts/                     # 開発用スクリプト
-│   ├── dev.sh                   # 開発サーバー起動
+│   ├── dev.sh                   # 開発サーバー起動（Docker使用）
+│   ├── dev-stop.sh              # 開発サーバー停止
+│   ├── dev-logs.sh              # 開発サーバーログ確認
+│   ├── dev-shell.sh             # 開発コンテナシェルアクセス
 │   ├── format.sh                # コードフォーマット
 │   └── lint.sh                  # リンティング
+├── deploy.sh                    # AWS ECS Fargate デプロイスクリプト
+├── Dockerfile                   # Dockerイメージ定義
 ├── pyproject.toml               # プロジェクト設定と依存関係
 └── README.md
 ```
