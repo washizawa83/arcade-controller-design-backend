@@ -1,0 +1,30 @@
+{
+  "family": "arcade-backend-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "2048",
+  "memory": "4096",
+  "executionRoleArn": "arn:aws:iam::936964319394:role/ecsTaskExecutionRole",
+  "runtimePlatform": { "cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX" },
+  "containerDefinitions": [{
+    "name": "arcade-backend",
+    "image": "936964319394.dkr.ecr.ap-northeast-1.amazonaws.com/arcade-backend:latest",
+    "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+    "essential": true,
+    "environment": [
+      { "name": "KICAD_PY", "value": "python3" },
+      { "name": "FREEROUTING_JAR", "value": "/opt/freerouting/freerouting.jar" },
+      { "name": "PORT", "value": "8080" }
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/ecs/arcade-backend",
+        "awslogs-region": "ap-northeast-1",
+        "awslogs-stream-prefix": "ecs"
+      }
+    },
+    "command": ["/opt/venv/bin/uvicorn","app.src.main:app","--host","0.0.0.0","--port","8080"],
+    "workingDirectory": "/app"
+  }]
+}
