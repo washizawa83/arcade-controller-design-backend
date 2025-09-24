@@ -184,6 +184,22 @@ uv run pytest
 | `DATABASE_URL`    | "sqlite:///./arcade_controller.db"                 | データベース URL           |
 | `SECRET_KEY`      | "your-secret-key-change-this-in-production"        | JWT 秘密鍵                 |
 
+## Docker 実行ベースライン（安定構成）
+
+- ベースイメージ: `ghcr.io/kicad/kicad:9.0.4`（KiCad 9 系を保証。ビルド時に `pcbnew.GetBuildVersion()`で 9.x を検証）
+- Java: Temurin JRE 21 を APT（Adoptium）で導入（Freerouting 2.x 要件）
+- X 環境: コンテナ起動時の CMD では `xvfb-run` を使用しない（通常の FastAPI 起動）。KiCad 実行時のみアプリ内で `USE_XVFB=1` により `xvfb-run` を使用
+- Python 依存: ビルダー段階で `/opt/site-packages` に展開し、本番段階で `PYTHONPATH=/opt/site-packages` を設定
+- ポート: 8080 を公開。ECS の `entryPoint/command` は上書きせず Dockerfile の `CMD (python3 -m uvicorn ...)` を採用
+- ヘルスチェック: ALB のパスは `/api/v1/health/` を推奨。ECS の `healthCheckGracePeriodSeconds` で起動直後の猶予を付与可
+
+トラブルシュートの要点
+
+- `java` が見つからない: 画像に JRE 21 が入っているか確認（`java -version`）
+- KiCad API の X Display エラー: `USE_XVFB=1` が有効か、`xvfb` がインストール済みか確認
+- OOM/137: `JAVA_TOOL_OPTIONS` の `-Xmx` を抑制、必要に応じて一時的にタスクメモリを引き上げ
+- ALB ヘルスチェック失敗: パスを `/api/v1/health/` にし、interval/timeout と猶予の見直し
+
 ## デプロイ
 
 ### AWS ECS Fargate デプロイ
@@ -234,7 +250,7 @@ export AWS_REGION="ap-northeast-1"     # デフォルト: ap-northeast-1
 
 ```bash
 # ヘルスチェック
-curl http://<PUBLIC_IP>:8080/health
+curl http://<PUBLIC_IP>:8080/api/v1/health/
 
 # PCB生成API テスト
 curl -X POST "http://<PUBLIC_IP>:8080/api/v1/pcb/generate-design-data" \
