@@ -9,6 +9,7 @@ echo "🐳 Starting development server with Docker..."
 APP_NAME="arcade-backend"
 DEV_IMAGE="$APP_NAME:dev"
 DEV_CONTAINER="$APP_NAME-dev"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # 既存のコンテナを停止・削除
 echo "🧹 Cleaning up existing containers..."
@@ -17,17 +18,19 @@ docker rm "$DEV_CONTAINER" 2>/dev/null || true
 
 # 開発用Dockerイメージをビルド
 echo "🔨 Building development Docker image..."
-docker build -t "$DEV_IMAGE" .
+docker build --platform=linux/amd64 -f "$ROOT_DIR/Dockerfile" -t "$DEV_IMAGE" "$ROOT_DIR"
 
 # 開発用コンテナを起動
 echo "🚀 Starting development container..."
-docker run -d \
+docker run --platform=linux/amd64 -d \
   --name "$DEV_CONTAINER" \
   -p 8080:8080 \
-  -v "$(pwd):/app" \
+  -v "$ROOT_DIR:/app" \
   -w /app \
+  -e PYTHONPATH=/opt/site-packages \
+  -e USE_XVFB=1 \
   "$DEV_IMAGE" \
-  /opt/venv/bin/uvicorn app.src.main:app --reload --host 0.0.0.0 --port 8080
+  python3 -m uvicorn app.src.main:app --reload --host 0.0.0.0 --port 8080
 
 echo "✅ Development server started!"
 echo "📍 API URL: http://localhost:8080"
