@@ -9,6 +9,7 @@ set -euo pipefail
 AWS_PROFILE="${AWS_PROFILE:-new-acct}"
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 APP_NAME="arcade-backend"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # タグ名を設定（引数があれば使用、なければタイムスタンプ）
 if [ $# -eq 0 ]; then
@@ -33,7 +34,7 @@ echo "🔨 Dockerイメージビルド中..."
 aws ecr get-login-password --region "$AWS_REGION" --profile "$AWS_PROFILE" | \
     docker login --username AWS --password-stdin "$REPO_URI" >/dev/null
 
-docker buildx build --platform linux/amd64 -t "$REPO_URI:$TAG" . --push
+docker buildx build --platform linux/amd64 -f "$ROOT_DIR/Dockerfile" -t "$REPO_URI:$TAG" "$ROOT_DIR" --push
 echo "✅ イメージプッシュ完了: $REPO_URI:$TAG"
 
 # タスク定義更新
@@ -56,10 +57,26 @@ for k in ['revision','status','taskDefinitionArn','requiresAttributes','compatib
 # AMD64ランタイムを強制
 td['runtimePlatform'] = {'cpuArchitecture':'X86_64','operatingSystemFamily':'LINUX'}
 
+# FargateのタスクレベルCPU/メモリ（コスト抑制: 2 vCPU / 4 GB）
+td['cpu'] = '2048'
+td['memory'] = '4096'
+
 # イメージを更新
 img = os.environ['IMAGE_REF']
 if td['containerDefinitions']:
-    td['containerDefinitions'][0]['image'] = img
+    # 1つ目のコンテナ定義を更新（本サービス想定）
+    c = td['containerDefinitions'][0]
+    c['image'] = img
+    # 既存のentryPoint/commandをクリアしてDockerfileのCMD/ENTRYPOINTを使用
+    c.pop('entryPoint', None)
+    c.pop('command', None)
+    # JAVAヒープ上限を設定してOOMを緩和
+    env = {e['name']: e['value'] for e in c.get('environment', [])}
+    env['JAVA_TOOL_OPTIONS'] = env.get('JAVA_TOOL_OPTIONS', '-Xms256m -Xmx1024m')
+    c['environment'] = [{'name': k, 'value': v} for k, v in env.items()]
+    # コンテナレベルのメモリ上書きをクリア（タスクレベル設定に委譲）
+    c.pop('memoryReservation', None)
+    c.pop('memory', None)
 
 with open('/tmp/td-new.json', 'w') as f:
     json.dump(td, f)
@@ -73,7 +90,10 @@ echo "✅ 新しいタスク定義登録完了: $NEW_TD_ARN"
 
 # サービス更新
 echo "🔄 サービス更新中..."
-aws ecs update-service --cluster "$APP_NAME" --service "$APP_NAME-svc" --task-definition "$NEW_TD_ARN" --force-new-deployment --region "$AWS_REGION" --profile "$AWS_PROFILE" >/dev/null
+aws ecs update-service --cluster "$APP_NAME" --service "$APP_NAME-svc" \
+  --task-definition "$NEW_TD_ARN" \
+  --health-check-grace-period-seconds 300 \
+  --force-new-deployment --region "$AWS_REGION" --profile "$AWS_PROFILE" >/dev/null
 echo "✅ サービス更新完了"
 
 # デプロイ完了待機
