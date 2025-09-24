@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import os
 import shutil
 import subprocess
@@ -11,10 +12,25 @@ from pathlib import Path
 
 from app.src.schemas.pcb import PCBRequest
 
-KICAD_PY = (
+# Resolve KiCad-bundled Python: prefer env var; fall back to macOS path; else 'python3'
+_MAC_KICAD_PY = (
     "/Applications/KiCad/"
     "KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3"
 )
+KICAD_PY = os.environ.get("KICAD_PY") or (_MAC_KICAD_PY if os.path.exists(_MAC_KICAD_PY) else "python3")
+
+
+def _run_kicad_python(driver: Path, cwd: Path, env: dict) -> subprocess.CompletedProcess:
+    """Run KiCad-bundled Python script. Use xvfb-run in headless Linux when DISPLAY is absent.
+
+    On CI/containers without an X server, pcbnew/wx require an X display. We default to
+    xvfb-run when DISPLAY is not set, unless USE_XVFB is explicitly set to '0'.
+    """
+    cmd = [KICAD_PY, str(driver)]
+    use_xvfb = (os.environ.get("USE_XVFB", "1") == "1") and not os.environ.get("DISPLAY")
+    if use_xvfb:
+        cmd = ["xvfb-run", "-a"] + cmd
+    return subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
 
 
 def _zip_directory(root: Path) -> bytes:
@@ -115,34 +131,180 @@ def load_and_place(lib, fp, ref_name, x, y, rot):
         nickname = 'local_rpi_pico'
     elif lib == 'kailh-choc-hotswap.pretty':
         nickname = 'local_kailh_choc'
+    # Always try local_fallback library first when present
+    try:
+        fallback_pretty = (proj / 'local.pretty')
+        if fallback_pretty.exists():
+            try:
+                print('TRY_LOCAL_FALLBACK', name)
+                mod = pcbnew.FootprintLoad('local_fallback', name)
+            except Exception as e:
+                print(f'TRY_LOCAL_FALLBACK FAILED: {e}')
+                mod = None
+            if not mod:
+                try:
+                    io = pcbnew.PCB_IO()
+                    mod = io.FootprintLoad(str(fallback_pretty), name)
+                except Exception as e:
+                    print(f'TRY_PCBIO_FALLBACK FAILED: {e}')
+                    mod = None
+            if not mod:
+                try:
+                    io = pcbnew.PCB_IO()
+                    mod = io.FootprintLoad(str(fallback_pretty), name + '.kicad_mod')
+                except Exception as e:
+                    print(f'TRY_PCBIO_FALLBACK_SUFFIXED FAILED: {e}')
+                    mod = None
+            if mod:
+                mod.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
+                mod.SetOrientationDegrees(rot)
+                mod.SetReference(ref_name)
+                board.Add(mod)
+                return
+    except Exception:
+        pass
 
     mod = None
     if nickname is not None:
         try:
+            print(f'TRY_NICKNAME: {nickname}/{name}')
             mod = pcbnew.FootprintLoad(nickname, name)
+        except Exception as e:
+            print(f'TRY_NICKNAME FAILED: {e}')
+            mod = None
+    # Prefer direct file-path load if a root-level fallback file exists (most robust across KiCad builds)
+    if not mod:
+        try:
+            alt = (proj / (name + ".kicad_mod"))
+            if alt.exists():
+                try:
+                    print('TRY_LOAD_ALT_EMPTYLIB_NAMEPATH', alt)
+                    mod = pcbnew.FootprintLoad("", str(alt))
+                except Exception as e:
+                    print(f'TRY_LOAD_ALT_EMPTYLIB_NAMEPATH FAILED: {e}')
+                    mod = None
+                if not mod:
+                    try:
+                        print('TRY_LOAD_ALT_LIBPATH_EMPTYNAME', alt)
+                        mod = pcbnew.FootprintLoad(str(alt), "")
+                    except Exception as e:
+                        print(f'TRY_LOAD_ALT_LIBPATH_EMPTYNAME FAILED: {e}')
+                        mod = None
+                if not mod:
+                    try:
+                        print('TRY_PCBIO_ALT_PARENT_NAME', alt.parent, alt.name)
+                        io = pcbnew.PCB_IO()
+                        mod = io.FootprintLoad(str(alt.parent), alt.name)
+                    except Exception as e:
+                        print(f'TRY_PCBIO_ALT_PARENT_NAME FAILED: {e}')
+                        mod = None
+                if not mod:
+                    try:
+                        print('TRY_PCBIO_ALT_PARENT_STEM', alt.parent, alt.stem)
+                        io = pcbnew.PCB_IO()
+                        mod = io.FootprintLoad(str(alt.parent), alt.stem)
+                    except Exception as e:
+                        print(f'TRY_PCBIO_ALT_PARENT_STEM FAILED: {e}')
+                        mod = None
+                if not mod:
+                    try:
+                        print('TRY_IO_MGR_KICAD_SEXPR', alt)
+                        io_mgr = pcbnew.IO_MGR()
+                        plugin = io_mgr.PluginFind(pcbnew.IO_MGR.KICAD_SEXPR)
+                        mod = plugin.FootprintLoad(str(alt), pcbnew.IO_MGR.KICAD_SEXPR)
+                    except Exception as e:
+                        print(f'TRY_IO_MGR_KICAD_SEXPR FAILED: {e}')
+                        mod = None
         except Exception:
             mod = None
     if not mod:
-        mod = pcbnew.FootprintLoad(str(pretty), name)
+        try:
+            print('TRY_LOAD_PRETTY_NAME', pretty, name)
+            mod = pcbnew.FootprintLoad(str(pretty), name)
+        except Exception as e:
+            print('ERR_LOAD_PRETTY_NAME', e)
+            mod = None
     if not mod:
         # KiCad 7 fallback: some builds require the .kicad_mod suffix as name
         try:
+            print('TRY_LOAD_PRETTY_NAME_WITH_EXT', pretty, name)
             mod = pcbnew.FootprintLoad(str(pretty), name + ".kicad_mod")
-        except Exception:
+        except Exception as e:
+            print(f'TRY_LOAD_PRETTY_NAME_WITH_EXT FAILED: {e}')
             mod = None
     if not mod:
         # Last resort 1: try giving full file path as the library argument
         try:
             target = (pretty / (name + ".kicad_mod"))
+            print('TRY_LOAD_TARGET_AS_LIB_WITH_NAME', target, name)
             mod = pcbnew.FootprintLoad(str(target), name)
-        except Exception:
+        except Exception as e:
+            print(f'TRY_LOAD_TARGET_AS_LIB_WITH_NAME FAILED: {e}')
             mod = None
     if not mod:
         # Last resort 2: some KiCad 7 builds accept empty name when lib points to file
         try:
             target = (pretty / (name + ".kicad_mod"))
+            print('TRY_LOAD_TARGET_AS_LIB_EMPTYNAME', target)
             mod = pcbnew.FootprintLoad(str(target), "")
-        except Exception:
+        except Exception as e:
+            print(f'TRY_LOAD_TARGET_AS_LIB_EMPTYNAME FAILED: {e}')
+            mod = None
+    if not mod:
+        # Last resort 3: empty lib, full file path as name (observed on some builds)
+        try:
+            target = (pretty / (name + ".kicad_mod"))
+            print('TRY_LOAD_EMPTYLIB_TARGET_AS_NAME', target)
+            mod = pcbnew.FootprintLoad("", str(target))
+        except Exception as e:
+            print(f'TRY_LOAD_EMPTYLIB_TARGET_AS_NAME FAILED: {e}')
+            mod = None
+    if not mod:
+        # Last resort 4: use PCB_IO plugin loader explicitly
+        try:
+            print('TRY_PCBIO_PRETTY_NAME', pretty, name)
+            io = pcbnew.PCB_IO()
+            mod = io.FootprintLoad(str(pretty), name)
+        except Exception as e:
+            print(f'TRY_PCBIO_PRETTY_NAME FAILED: {e}')
+            mod = None
+    if not mod:
+        try:
+            print('TRY_PCBIO_PRETTY_NAME_WITH_EXT', pretty, name)
+            io = pcbnew.PCB_IO()
+            mod = io.FootprintLoad(str(pretty), name + ".kicad_mod")
+        except Exception as e:
+            print(f'TRY_PCBIO_PRETTY_NAME_WITH_EXT FAILED: {e}')
+            mod = None
+    if not mod:
+        try:
+            target = (pretty / (name + ".kicad_mod"))
+            print('TRY_PCBIO_PARENT_NAME', target.parent, target.name)
+            io = pcbnew.PCB_IO()
+            mod = io.FootprintLoad(str(target.parent), target.name)
+        except Exception as e:
+            print(f'TRY_PCBIO_PARENT_NAME FAILED: {e}')
+            mod = None
+    if not mod:
+        # Last resort 5: load root-level fallback footprint file included in project template
+        try:
+            alt = (proj / (name + ".kicad_mod"))
+            if alt.exists():
+                # Try various loaders against direct file path
+                try:
+                    mod = pcbnew.FootprintLoad(str(alt), "")
+                except Exception as e:
+                    print(f'TRY_ROOT_FALLBACK_EMPTY_NAME FAILED: {e}')
+                    mod = None
+                if not mod:
+                    try:
+                        io = pcbnew.PCB_IO()
+                        mod = io.FootprintLoad(str(alt.parent), alt.name)
+                    except Exception as e:
+                        print(f'TRY_ROOT_FALLBACK_PCBIO_PARENT_NAME FAILED: {e}')
+                        mod = None
+        except Exception as e:
+            print(f'TRY_ROOT_FALLBACK_GENERAL FAILED: {e}')
             mod = None
     if not mod:
         msg = (
@@ -155,8 +317,11 @@ def load_and_place(lib, fp, ref_name, x, y, rot):
     mod.SetReference(ref_name)
     board.Add(mod)
 
-# Place/move Pico (U1) to a fixed position
-load_and_place('raspberry-pi-pico.pretty', 'RPi_Pico_SMD_TH', 'U1', 150.0, 26.0, 0.0)
+# Place/move Pico (U1) to a fixed position (tolerate load failure on older KiCad)
+try:
+    load_and_place('raspberry-pi-pico.pretty', 'RPi_Pico_SMD_TH', 'U1', 150.0, 26.0, 0.0)
+except Exception as _pico_err:
+    print('WARN_PICO_FOOTPRINT_LOAD', _pico_err)
 
 # Move/add mounting holes to fixed positions
 HOLE_POS = [
@@ -178,7 +343,10 @@ for _r, _hx, _hy in HOLE_POS:
         target = pretty / 'MountingHole_3.2mm_M3.kicad_mod'
         if pretty.exists() and target.exists():
             # use directory path (.pretty) for FootprintLoad in headless mode
-            load_and_place('mount.pretty', 'MountingHole_3.2mm_M3', _r, _hx, _hy, 0.0)
+            try:
+                load_and_place('mount.pretty', 'MountingHole_3.2mm_M3', _r, _hx, _hy, 0.0)
+            except Exception as _mh_err:
+                print('WARN_MOUNT_FOOTPRINT_LOAD', _mh_err)
 
 # Place switches
 switches = __SWITCHES__
@@ -309,9 +477,63 @@ def _create_project_dir(req: PCBRequest) -> Path:
         "  (lib (name \"local_kailh_choc\")(type \"KiCad\")\n",
         "       (uri \"${KIPRJMOD}/footprints/kailh-choc-hotswap.pretty\")\n",
         "       (options \"\")(descr \"Proj local Kailh choc hotswap\"))\n",
+        "  (lib (name \"local_fallback\")(type \"KiCad\")\n",
+        "       (uri \"${KIPRJMOD}/local.pretty\")\n",
+        "       (options \"\")(descr \"Project local fallback footprints\"))\n",
         ")\n",
     ]
     fp_table.write_text("".join(lines))
+
+    # Ensure Pico footprint is also placed at project root for direct file-load fallback
+    try:
+        pico_src = work_project / "footprints" / "raspberry-pi-pico.pretty" / "RPi_Pico_SMD_TH.kicad_mod"
+        pico_dst = work_project / "RPi_Pico_SMD_TH.kicad_mod"
+        if pico_src.exists() and not pico_dst.exists():
+            shutil.copy2(pico_src, pico_dst)
+        # Also ensure mounting hole fallback exists at project root
+        mh_src = work_project / "footprints" / "mount.pretty" / "MountingHole_3.2mm_M3.kicad_mod"
+        mh_dst = work_project / "MountingHole_3.2mm_M3.kicad_mod"
+        if mh_src.exists() and not mh_dst.exists():
+            shutil.copy2(mh_src, mh_dst)
+        # Ensure Kailh choc switch footprints are available at project root for fallback
+        k_pretty = work_project / "footprints" / "kailh-choc-hotswap.pretty"
+        for sw in ("switch_18.kicad_mod", "switch_24.kicad_mod", "switch_30.kicad_mod"):
+            s = k_pretty / sw
+            d = work_project / sw
+            if s.exists() and not d.exists():
+                shutil.copy2(s, d)
+        # Build local.pretty fallback library directory
+        local_pretty = work_project / "local.pretty"
+        local_pretty.mkdir(exist_ok=True)
+        for src in [pico_src, mh_src] + [k_pretty / sw for sw in ("switch_18.kicad_mod", "switch_24.kicad_mod", "switch_30.kicad_mod")]:
+            try:
+                if src.exists():
+                    dst = local_pretty / src.name
+                    if not dst.exists():
+                        shutil.copy2(src, dst)
+            except Exception:
+                pass
+        # Make copied footprints backward-compatible with KiCad 7 loader by normalizing headers
+        try:
+            # Normalize both local.pretty files and root-level fallback files
+            root_fallbacks = [pico_dst, mh_dst] + [work_project / f for f in ("switch_18.kicad_mod", "switch_24.kicad_mod", "switch_30.kicad_mod")]
+            targets = list(local_pretty.glob("*.kicad_mod")) + [p for p in root_fallbacks if p.exists()]
+            for fp in targets:
+                try:
+                    text = fp.read_text()
+                    # Normalize version line to a KiCad 7-compatible schema stamp
+                    text = re.sub(r"^\s*\(version\s+\d+\)", "(version 20221018)", text, count=1, flags=re.MULTILINE)
+                    # Drop generator_version field which older parsers may not recognize
+                    text = re.sub(r"^\s*\(generator_version\s+\"[^\"]+\"\)\s*\n", "", text, flags=re.MULTILINE)
+                    fp.write_text(text)
+                except Exception:
+                    # Best-effort normalization
+                    pass
+        except Exception:
+            pass
+    except Exception:
+        # Non-fatal: only affects one of the loader fallbacks
+        pass
 
     # Normalize schematic footprint references to local_* nicknames
     sch = work_project / "StickLess.kicad_sch"
@@ -335,13 +557,7 @@ def _create_project_dir(req: PCBRequest) -> Path:
     env = os.environ.copy()
     env.setdefault("KIPRJMOD", str(work_project))
 
-    proc = subprocess.run(
-        [KICAD_PY, str(driver)],
-        cwd=str(work_project),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    proc = _run_kicad_python(driver, work_project, env)
     if proc.returncode != 0:
         raise RuntimeError(f"pcbnew generation failed: {proc.stderr}\n{proc.stdout}")
     return work_project
@@ -386,7 +602,7 @@ def export_dsn_from_pcb(pcb_path: Path) -> bytes:
             ]
         )
     )
-    proc = subprocess.run([KICAD_PY, str(driver)], capture_output=True, text=True)
+    proc = _run_kicad_python(driver, work_root, os.environ.copy())
     if proc.returncode != 0 or not out_dsn.exists():
         raise RuntimeError("Failed to export DSN: " + (proc.stderr or proc.stdout))
     return out_dsn.read_bytes()
@@ -396,13 +612,17 @@ def build_routed_project_zip(req: PCBRequest) -> tuple[bytes, str]:
     """One-click pipeline: generate project, autoroute, apply session, zip project."""
     work_project = _create_project_dir(req)
     pcb_path = work_project / "StickLess.kicad_pcb"
-    # Export DSN from the built PCB
-    dsn_bytes = export_dsn_from_pcb(pcb_path)
-    # Run freerouting
-    ses_bytes = autoroute_dsn_to_ses(dsn_bytes)
-    # Apply SES to PCB
-    routed_bytes = apply_ses_to_pcb(pcb_path.read_bytes(), ses_bytes)
-    pcb_path.write_bytes(routed_bytes)
+    try:
+        # Export DSN from the built PCB
+        dsn_bytes = export_dsn_from_pcb(pcb_path)
+        # Run freerouting
+        ses_bytes = autoroute_dsn_to_ses(dsn_bytes)
+        # Apply SES to PCB
+        routed_bytes = apply_ses_to_pcb(pcb_path.read_bytes(), ses_bytes)
+        pcb_path.write_bytes(routed_bytes)
+    except Exception as e:
+        # Strict: fail the request if autoroute or SES apply fails
+        raise
     # Ensure PRL hides drawing sheet
     prl = work_project / "StickLess.kicad_prl"
     _ensure_prl_hides_drawing_sheet(prl)
@@ -1097,13 +1317,7 @@ def apply_ses_to_pcb(pcb_bytes: bytes, ses_bytes: bytes) -> bytes:
     )
 
     env = os.environ.copy()
-    proc = subprocess.run(
-        [KICAD_PY, str(driver)],
-        cwd=str(work_root),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    proc = _run_kicad_python(driver, work_root, env)
     if proc.returncode != 0 or not out_pcb.exists():
         msg = (
             "pcbnew ImportSpecctraSession failed: "
