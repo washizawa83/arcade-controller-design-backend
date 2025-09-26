@@ -200,35 +200,16 @@ def export_dsn_from_pcb(pcb_path: Path) -> bytes:
     """Export a Specctra DSN from a .kicad_pcb using KiCad Python."""
     work_root = Path(tempfile.mkdtemp(prefix="exp_dsn_"))
     out_dsn = work_root / "out.dsn"
-    driver = work_root / "_export_dsn.py"
-    driver.write_text(
-        "\n".join(
-            [
-                "import pcbnew, wx",
-                "from pathlib import Path",
-                "_app = wx.App(False)",
-                f"pcb_path = Path(r'{pcb_path.as_posix()}')",
-                f"out_path = Path(r'{out_dsn.as_posix()}')",
-                "board = pcbnew.LoadBoard(str(pcb_path))",
-                "ok = False",
-                "try:",
-                "    board.ExportSpecctraDSN(str(out_path))",
-                "    ok = True",
-                "except Exception as e1:",
-                "    fn = getattr(pcbnew, 'ExportSpecctraDSN', None)",
-                "    if callable(fn):",
-                "        try:",
-                "            fn(board, str(out_path))",
-                "            ok = True",
-                "        except Exception as e2:",
-                "            print('EXPORT_DSN_ALT_FAILED', e2)",
-                "    else:",
-                "        print('EXPORT_DSN_METHOD_FAILED', e1)",
-                "if not ok:",
-                "    raise RuntimeError('DSN export failed')",
-            ]
-        )
+    # Load script template and inject paths
+    template = (Path(__file__).parent / "kicad_scripts" / "export_dsn.py").read_text()
+    script = (
+        template
+        .replace("__PCB_PATH__", pcb_path.as_posix())
+        .replace("__OUT_PATH__", out_dsn.as_posix())
     )
+    driver = work_root / "_export_dsn.py"
+    driver.write_text(script)
+
     proc = _run_kicad_python(driver, work_root, os.environ.copy())
     if proc.returncode != 0 or not out_dsn.exists():
         raise RuntimeError("Failed to export DSN: " + (proc.stderr or proc.stdout))
