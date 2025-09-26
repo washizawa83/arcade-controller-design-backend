@@ -57,9 +57,9 @@ for k in ['revision','status','taskDefinitionArn','requiresAttributes','compatib
 # AMD64ランタイムを強制
 td['runtimePlatform'] = {'cpuArchitecture':'X86_64','operatingSystemFamily':'LINUX'}
 
-# FargateのタスクレベルCPU/メモリ（コスト抑制: 2 vCPU / 4 GB）
-td['cpu'] = '2048'
-td['memory'] = '4096'
+# FargateのタスクレベルCPU/メモリ（1 vCPU / 2 GB）
+td['cpu'] = '1024'
+td['memory'] = '2048'
 
 # イメージを更新
 img = os.environ['IMAGE_REF']
