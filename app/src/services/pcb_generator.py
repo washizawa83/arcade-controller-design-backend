@@ -66,6 +66,169 @@ def _ensure_prl_hides_drawing_sheet(prl_path: Path) -> None:
         pass
 
 
+def _write_housing_pdf_files(work_project: Path, req: PCBRequest) -> None:
+    """Create design-data/housing-data PDF files for acrylic plate with R=8 corners.
+
+    Generates three files (stroke only, no fill), red CMYK (0,1,1,0), width 0.01 mm:
+      1) outline + switch holes + mounting holes
+      2) outline + switch holes + mounting holes + RPi cutout
+      3) outline only
+    Coordinates follow our CAD convention with origin at top-left (Y downward).
+    """
+    # Write directly under project/housing-data to avoid double design-data in consumer paths
+    # Extractors that place files under a top-level design-data/ will result in design-data/housing-data/
+    out_dir = work_project / "housing-data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import mm as _pt_per_mm
+        from reportlab.lib.colors import Color
+    except Exception:
+        # If reportlab is unavailable, leave the folder present and exit
+        return
+
+    # Board outline
+    width_mm = 300.0
+    height_mm = 200.0
+    r_mm = 8.0
+
+    # Mounting holes
+    mounting_positions = [
+        (125.0, 10.0), (175.0, 10.0), (10.0, 10.0), (10.0, 100.0),
+        (10.0, 190.0), (125.0, 190.0), (175.0, 190.0), (290.0, 190.0),
+        (290.0, 100.0), (290.0, 10.0),
+    ]
+    mounting_dia_mm = 3.2
+
+    # Switch holes from request (use provided size in mm, fallback 24)
+    switch_holes: list[tuple[float, float, float]] = []
+    try:
+        for s in req.switches:
+            d = float(getattr(s, "size", 24.0))
+            switch_holes.append((float(s.x_mm), float(s.y_mm), d))
+    except Exception:
+        switch_holes = []
+
+    # RPi Pico cutout rectangle (centered near U1 at 150,26)
+    pico_center_x, pico_center_y = 150.0, 26.0
+    pico_w, pico_h = 54.0, 24.0
+    pico_rect = (
+        pico_center_x - pico_w / 2.0,
+        pico_center_y - pico_h / 2.0,
+        pico_center_x + pico_w / 2.0,
+        pico_center_y + pico_h / 2.0,
+    )
+
+    # Helpers
+    def mm_to_pt(mm_val: float) -> float:
+        return mm_val * _pt_per_mm
+
+    red = Color(1, 0, 0)  # RGB (255, 0, 0)
+    stroke_w_pt = mm_to_pt(0.01)
+
+    def draw_outline(c: canvas.Canvas) -> None:
+        # Flip Y so that (0,0) is top-left like our CAD coordinates
+        c.translate(0, mm_to_pt(height_mm))
+        c.scale(1, -1)
+
+        # Rounded rectangle outline using segmented arcs
+        import math
+        def seg_arc(cx, cy, rad, a0, a1, steps=32):
+            pts = []
+            r = rad
+            a0r = math.radians(a0)
+            a1r = math.radians(a1)
+            for i in range(steps + 1):
+                t = i / steps
+                ang = a0r + (a1r - a0r) * t
+                pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+            return pts
+
+        path = c.beginPath()
+        # Start top edge left
+        path.moveTo(mm_to_pt(r_mm), mm_to_pt(0.0))
+        path.lineTo(mm_to_pt(width_mm - r_mm), mm_to_pt(0.0))
+        # Top-right corner (270->360)
+        for x, y in seg_arc(width_mm - r_mm, r_mm, r_mm, 270, 360):
+            path.lineTo(mm_to_pt(x), mm_to_pt(y))
+        # Right edge
+        path.lineTo(mm_to_pt(width_mm), mm_to_pt(height_mm - r_mm))
+        # Bottom-right (0->90)
+        for x, y in seg_arc(width_mm - r_mm, height_mm - r_mm, r_mm, 0, 90):
+            path.lineTo(mm_to_pt(x), mm_to_pt(y))
+        # Bottom edge
+        path.lineTo(mm_to_pt(r_mm), mm_to_pt(height_mm))
+        # Bottom-left (90->180)
+        for x, y in seg_arc(r_mm, height_mm - r_mm, r_mm, 90, 180):
+            path.lineTo(mm_to_pt(x), mm_to_pt(y))
+        # Left edge
+        path.lineTo(mm_to_pt(0.0), mm_to_pt(r_mm))
+        # Top-left (180->270)
+        for x, y in seg_arc(r_mm, r_mm, r_mm, 180, 270):
+            path.lineTo(mm_to_pt(x), mm_to_pt(y))
+        path.close()
+        c.drawPath(path, stroke=1, fill=0)
+
+    def draw_mounting_holes(c: canvas.Canvas) -> None:
+        for (x, y) in mounting_positions:
+            c.circle(mm_to_pt(x), mm_to_pt(y), mm_to_pt(mounting_dia_mm / 2.0), stroke=1, fill=0)
+
+    def draw_switch_holes(c: canvas.Canvas) -> None:
+        for (x, y, d) in switch_holes:
+            # size 18 -> 18x18 square (centered at x,y). others -> circle d/2
+            if abs(d - 18.0) < 1e-6 or int(round(d)) == 18:
+                side = 18.0
+                x0 = mm_to_pt(x - side / 2.0)
+                y0 = mm_to_pt(y - side / 2.0)
+                c.rect(x0, y0, mm_to_pt(side), mm_to_pt(side), stroke=1, fill=0)
+            else:
+                c.circle(mm_to_pt(x), mm_to_pt(y), mm_to_pt(d / 2.0), stroke=1, fill=0)
+
+    def draw_pico_rect(c: canvas.Canvas) -> None:
+        # Rotate 90°: width=24, height=54 around center, then clamp within board 300x200
+        cx, cy = pico_center_x, pico_center_y
+        w, h = pico_h, pico_w  # 24 x 54
+        x0 = cx - w / 2.0
+        y0 = cy - h / 2.0
+        x1 = cx + w / 2.0
+        y1 = cy + h / 2.0
+        # Clamp inside the board outline
+        dx = 0.0
+        dy = 0.0
+        if x0 < 0.0:
+            dx = -x0
+        elif x1 > width_mm:
+            dx = width_mm - x1
+        if y0 < 0.0:
+            dy = -y0
+        elif y1 > height_mm:
+            dy = height_mm - y1
+        x0 += dx; y0 += dy
+        # Draw
+        c.rect(mm_to_pt(x0), mm_to_pt(y0), mm_to_pt(w), mm_to_pt(h), stroke=1, fill=0)
+
+    def write_pdf(path: Path, add_switches: bool, add_pico: bool) -> None:
+        c = canvas.Canvas(str(path), pagesize=(mm_to_pt(width_mm), mm_to_pt(height_mm)))
+        c.setStrokeColor(red)
+        c.setLineWidth(stroke_w_pt)
+        draw_outline(c)
+        # Always include mounting holes
+        draw_mounting_holes(c)
+        if add_switches:
+            draw_switch_holes(c)
+        if add_pico:
+            draw_pico_rect(c)
+        c.showPage()
+        c.save()
+
+    # 1) Mounts + Buttons
+    write_pdf(out_dir / "layer1.pdf", add_switches=True, add_pico=False)
+    # 2) Mounts + Buttons + RPi
+    write_pdf(out_dir / "layer2.pdf", add_switches=True, add_pico=True)
+    # 3) Outline only
+    write_pdf(out_dir / "layer3.pdf", add_switches=False, add_pico=False)
+
 def _write_driver_script(work_project_dir: Path, req: PCBRequest) -> Path:
     """Create a small Python driver that uses pcbnew to build a .kicad_pcb."""
     # Load template from kicad_scripts/pcb_build.py
@@ -187,6 +350,11 @@ def _create_project_dir(req: PCBRequest) -> Path:
     proc = _run_kicad_python(driver, work_project, env)
     if proc.returncode != 0:
         raise RuntimeError(f"pcbnew generation failed: {proc.stderr}\n{proc.stdout}")
+    # Generate housing PDFs alongside PCB (best-effort)
+    try:
+        _write_housing_pdf_files(work_project, req)
+    except Exception:
+        pass
     return work_project
 
 
