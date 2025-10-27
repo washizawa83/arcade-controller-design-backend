@@ -176,14 +176,21 @@ def _write_housing_pdf_files(work_project: Path, req: PCBRequest) -> None:
 
     def draw_switch_holes(c: canvas.Canvas) -> None:
         for (x, y, d) in switch_holes:
-            # size 18 -> 18x18 square (centered at x,y). others -> circle d/2
+            # Normalize requested diameter: 18 -> square 18x18, 24 -> 20.7mm, 30 -> 26.0mm
             if abs(d - 18.0) < 1e-6 or int(round(d)) == 18:
                 side = 18.0
                 x0 = mm_to_pt(x - side / 2.0)
                 y0 = mm_to_pt(y - side / 2.0)
                 c.rect(x0, y0, mm_to_pt(side), mm_to_pt(side), stroke=1, fill=0)
             else:
-                c.circle(mm_to_pt(x), mm_to_pt(y), mm_to_pt(d / 2.0), stroke=1, fill=0)
+                # Map nominal sizes to actual cut diameters
+                if abs(d - 24.0) < 1e-6 or int(round(d)) == 24:
+                    eff = 20.7
+                elif abs(d - 30.0) < 1e-6 or int(round(d)) == 30:
+                    eff = 26.0
+                else:
+                    eff = d
+                c.circle(mm_to_pt(x), mm_to_pt(y), mm_to_pt(eff / 2.0), stroke=1, fill=0)
 
     def draw_pico_rect(c: canvas.Canvas) -> None:
         # Rotate 90°: width=24, height=54 around center, then clamp within board 300x200
