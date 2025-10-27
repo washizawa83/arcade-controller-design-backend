@@ -270,6 +270,32 @@ curl -X POST "http://<PUBLIC_IP>:8080/api/v1/pcb/generate-design-data" \
   -o "routed_project.zip"
 ```
 
+### AWS Lightsail（簡易・低コスト）
+
+ECS を残したまま、Lightsail コンテナサービスへ同一 Docker イメージをデプロイできます。
+
+手順:
+
+```bash
+# 必要: aws cli v2 でログイン済み、AWS_REGION 設定（例: ap-northeast-1）
+export AWS_REGION=ap-northeast-1
+
+# 1) デプロイスクリプト実行（初回はサービス自動作成）
+./scripts/deploy-lightsail.sh
+
+# 任意: サービス名/リソースは環境変数で調整
+SERVICE_NAME=arcade-backend POWER=medium SCALE=1 ./scripts/deploy-lightsail.sh
+
+# 2) 出力URLにアクセス
+# 例: https://xxx.lightsail.aws.amazon.com/api/v1/health/
+```
+
+既定構成:
+
+- ポート: 8080 公開（エンドポイント HTTP/ヘルスチェック `/api/v1/health/`）
+- 環境変数: `USE_XVFB=1`, `PYTHONPATH=/opt/site-packages`, `JAVA_TOOL_OPTIONS=-Xms256m -Xmx1024m`
+- リソース: `POWER=medium`（目安: 1 vCPU / 2 GB）
+
 ### API エンドポイント
 
 #### PCB 生成関連

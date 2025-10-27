@@ -1,4 +1,5 @@
 import pcbnew
+import math
 import wx
 from pathlib import Path
 
@@ -10,10 +11,11 @@ board = pcbnew.BOARD()
 # Units helper
 mm = pcbnew.FromMM
 
-# Set a simple rectangular outline on Edge.Cuts (fixed board size)
+# Set a rounded-rectangle outline on Edge.Cuts (fixed board size)
 edge = board.GetLayerID('Edge.Cuts')
 x0, y0 = 0, 0
 x1, y1 = 300.0, 200.0
+R = 8.0  # corner radius (mm)
 
 def add_line(xa, ya, xb, yb):
     seg = pcbnew.PCB_SHAPE(board)
@@ -23,10 +25,36 @@ def add_line(xa, ya, xb, yb):
     seg.SetEnd(pcbnew.VECTOR2I(mm(xb), mm(yb)))
     board.Add(seg)
 
-add_line(x0, y0, x1, y0)
-add_line(x1, y0, x1, y1)
-add_line(x1, y1, x0, y1)
-add_line(x0, y1, x0, y0)
+def add_quarter_arc_segments(cx: float, cy: float, deg0: float, deg1: float, steps: int = 18):
+    # Draw a quarter (or any) arc on Edge.Cuts as short segments (API-safe)
+    rad = R
+    a0 = math.radians(deg0)
+    a1 = math.radians(deg1)
+    px = cx + rad * math.cos(a0)
+    py = cy + rad * math.sin(a0)
+    for i in range(1, steps + 1):
+        t = i / steps
+        ang = a0 + (a1 - a0) * t
+        nx = cx + rad * math.cos(ang)
+        ny = cy + rad * math.sin(ang)
+        add_line(px, py, nx, ny)
+        px, py = nx, ny
+
+# Straight edges shortened by radius
+add_line(x0 + R, y0, x1 - R, y0)      # top
+add_line(x1, y0 + R, x1, y1 - R)      # right
+add_line(x1 - R, y1, x0 + R, y1)      # bottom
+add_line(x0, y1 - R, x0, y0 + R)      # left
+
+# Corner arcs as segmented quarter-circles (inward sweep)
+# top-right corner center
+add_quarter_arc_segments(x1 - R, y0 + R, -90.0, 0.0)
+# bottom-right corner center
+add_quarter_arc_segments(x1 - R, y1 - R, 0.0, 90.0)
+# bottom-left corner center
+add_quarter_arc_segments(x0 + R, y1 - R, 90.0, 180.0)
+# top-left corner center
+add_quarter_arc_segments(x0 + R, y0 + R, 180.0, 270.0)
 
 #! Load footprints from project-local libs (fp-lib-table lives in project dir)
 proj = Path('.')
