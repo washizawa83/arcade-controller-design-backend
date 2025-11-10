@@ -27,13 +27,21 @@ fi
 export PATH="$BIN_DIR:$PATH"
 echo "lightsailctl: $($BIN_DIR/lightsailctl --version || echo not-found)"
 
-echo "[1/5] Build image (linux/amd64)"
-docker buildx build \
-  --platform linux/amd64 \
-  -f "$ROOT_DIR/Dockerfile" \
-  -t ${SERVICE_NAME}:${LABEL} \
-  "$ROOT_DIR" \
-  --load
+# Resolve image reference from env (README flow)
+if [[ -z "${IMAGE_URI:-}" && -n "${IMAGE_ALIAS:-}" ]]; then
+  IMAGE_URI="$IMAGE_ALIAS"
+fi
+
+if [[ -z "${IMAGE_URI:-}" ]]; then
+  echo "ERROR: IMAGE_URI (or IMAGE_ALIAS) is required." >&2
+  echo "Run the following (as in README):" >&2
+  echo "  aws lightsail push-container-image --region $REGION --service-name $SERVICE_NAME --label $LABEL --image ${SERVICE_NAME}:${LABEL}" >&2
+  echo "  export IMAGE_ALIAS=\":${SERVICE_NAME}.${LABEL}.<N>\"  # push の出力に表示されたエイリアス" >&2
+  echo "  IMAGE_URI=\"$IMAGE_ALIAS\" SERVICE_NAME=$SERVICE_NAME POWER=$POWER SCALE=$SCALE bash scripts/deploy-lightsail.sh" >&2
+  exit 2
+fi
+
+echo "[1/5] Skip build (using provided IMAGE_URI/ALIAS)"
 
 echo "[2/5] Ensure container service exists"
 set +e
@@ -45,42 +53,7 @@ aws lightsail create-container-service \
 set -e
 
 echo "[3/5] Resolve image for deployment"
-IMAGE_REF=""
-if [[ -n "${IMAGE_URI:-}" ]]; then
-  echo "Using external image registry (IMAGE_URI provided)"
-  IMAGE_REF="$IMAGE_URI"
-elif [[ -n "${IMAGE_ALIAS:-}" ]]; then
-  echo "Using provided Lightsail image alias (IMAGE_ALIAS)"
-  IMAGE_REF="$IMAGE_ALIAS"
-else
-  echo "Pushing to Lightsail registry (this may take a while)"
-  # Capture entire output to parse alias hint
-  PUSH_OUT=$(aws lightsail push-container-image \
-    --service-name "$SERVICE_NAME" \
-    --label "$LABEL" \
-    --image ${SERVICE_NAME}:${LABEL} \
-    --region "$REGION" 2>&1 | tee /dev/stderr)
-  # Example tail: Refer to this image as ":arcade-backend.backend.2" in deployments.
-  PARSED_ALIAS=$(echo "$PUSH_OUT" | sed -n 's/.*Refer to this image as \"\([^\"]*\)\".*/\1/p' | tail -n1 || true)
-  if [[ -n "$PARSED_ALIAS" ]]; then
-    IMAGE_REF="$PARSED_ALIAS"
-  else
-    # Fallback to JSON field when available
-    try_ref=$(aws lightsail push-container-image \
-      --service-name "$SERVICE_NAME" \
-      --label "$LABEL" \
-      --image ${SERVICE_NAME}:${LABEL} \
-      --region "$REGION" \
-      --query 'image' --output text 2>/dev/null || true)
-    if [[ -n "$try_ref" && "$try_ref" != "None" ]]; then
-      IMAGE_REF="$try_ref"
-    else
-      echo "Failed to determine image reference from Lightsail push output." >&2
-      echo "If push succeeded, set IMAGE_ALIAS to the shown value (e.g. :${SERVICE_NAME}.${LABEL}.N) and re-run." >&2
-      exit 1
-    fi
-  fi
-fi
+IMAGE_REF="$IMAGE_URI"
 echo "  -> Image reference: $IMAGE_REF"
 
 TMP_DIR=$(mktemp -d)

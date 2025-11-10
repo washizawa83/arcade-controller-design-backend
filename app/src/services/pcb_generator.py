@@ -176,18 +176,18 @@ def _write_housing_pdf_files(work_project: Path, req: PCBRequest) -> None:
 
     def draw_switch_holes(c: canvas.Canvas) -> None:
         for (x, y, d) in switch_holes:
-            # Normalize requested diameter: 18 -> square 18x18, 24 -> 20.7mm, 30 -> 26.0mm
+            # Normalize requested diameter: 18 -> square 19x19, 24 -> 21.2mm, 30 -> 26.5mm
             if abs(d - 18.0) < 1e-6 or int(round(d)) == 18:
-                side = 18.0
+                side = 19.0
                 x0 = mm_to_pt(x - side / 2.0)
                 y0 = mm_to_pt(y - side / 2.0)
                 c.rect(x0, y0, mm_to_pt(side), mm_to_pt(side), stroke=1, fill=0)
             else:
                 # Map nominal sizes to actual cut diameters
                 if abs(d - 24.0) < 1e-6 or int(round(d)) == 24:
-                    eff = 20.7
+                    eff = 21.2
                 elif abs(d - 30.0) < 1e-6 or int(round(d)) == 30:
-                    eff = 26.0
+                    eff = 26.5
                 else:
                     eff = d
                 c.circle(mm_to_pt(x), mm_to_pt(y), mm_to_pt(eff / 2.0), stroke=1, fill=0)
