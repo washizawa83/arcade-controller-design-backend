@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import io
 import re
 import os
@@ -176,18 +177,18 @@ def _write_housing_pdf_files(work_project: Path, req: PCBRequest) -> None:
 
     def draw_switch_holes(c: canvas.Canvas) -> None:
         for (x, y, d) in switch_holes:
-            # Normalize requested diameter: 18 -> square 19x19, 24 -> 21.2mm, 30 -> 26.5mm
+            # Normalize requested diameter: 18 -> square 19.5x19.5, 24 -> 21.7mm, 30 -> 27.0mm
             if abs(d - 18.0) < 1e-6 or int(round(d)) == 18:
-                side = 19.0
+                side = 19.5
                 x0 = mm_to_pt(x - side / 2.0)
                 y0 = mm_to_pt(y - side / 2.0)
                 c.rect(x0, y0, mm_to_pt(side), mm_to_pt(side), stroke=1, fill=0)
             else:
                 # Map nominal sizes to actual cut diameters
                 if abs(d - 24.0) < 1e-6 or int(round(d)) == 24:
-                    eff = 21.2
+                    eff = 21.7
                 elif abs(d - 30.0) < 1e-6 or int(round(d)) == 30:
-                    eff = 26.5
+                    eff = 27.0
                 else:
                     eff = d
                 c.circle(mm_to_pt(x), mm_to_pt(y), mm_to_pt(eff / 2.0), stroke=1, fill=0)
@@ -235,6 +236,24 @@ def _write_housing_pdf_files(work_project: Path, req: PCBRequest) -> None:
     write_pdf(out_dir / "layer2.pdf", add_switches=True, add_pico=True)
     # 3) Outline only
     write_pdf(out_dir / "layer3.pdf", add_switches=False, add_pico=False)
+
+
+def _write_button_positions_csv(work_project: Path, req: PCBRequest) -> None:
+    """Write button (switch) placement coordinates to design-data/button-layout.csv.
+
+    CSV columns: ref, x_mm, y_mm, rotation_deg, size_mm.
+    Coordinates follow the same convention as the PCB (origin at top-left, Y downward).
+    """
+    out_dir = work_project / "design-data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / "button-layout.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["ref", "x_mm", "y_mm", "rotation_deg", "size_mm"])
+        for s in req.switches:
+            size = getattr(s, "size", 24)
+            w.writerow([s.ref, s.x_mm, s.y_mm, s.rotation_deg, size])
+
 
 def _write_driver_script(work_project_dir: Path, req: PCBRequest) -> Path:
     """Create a small Python driver that uses pcbnew to build a .kicad_pcb."""
@@ -360,6 +379,11 @@ def _create_project_dir(req: PCBRequest) -> Path:
     # Generate housing PDFs alongside PCB (best-effort)
     try:
         _write_housing_pdf_files(work_project, req)
+    except Exception:
+        pass
+    # Output button positions as CSV (design-data reference)
+    try:
+        _write_button_positions_csv(work_project, req)
     except Exception:
         pass
     return work_project

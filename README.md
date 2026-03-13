@@ -283,15 +283,22 @@ export AWS_REGION=ap-northeast-1
 # 1) デプロイスクリプト実行（初回はサービス自動作成）
 ./scripts/deploy-lightsail.sh
 
-
-## lightsailにpush
 ```
 
-aws lightsail push-container-image --region ap-northeast-1 --service-name arcade-backend --label backend --image arcade-backend:backend
+## イメージの再ビルド
 
+```
+docker buildx build --platform linux/amd64 -t arcade-backend:backend --no-cache --pull --load .
+```
+
+## lightsail に push
+
+```
+aws lightsail push-container-image --region ap-northeast-1 --service-name arcade-backend --label backend --image arcade-backend:backend
 ```
 
 ## イメージエイリアスを環境変数に設定
+
 ```
 
 export AWS_PROFILE=new-acct
@@ -300,7 +307,8 @@ export IMAGE_ALIAS=":arcade-backend.backend.<push 結果のエイリアス>"
 
 ```
 
-## Lightsailへデプロイ
+## Lightsail へデプロイ
+
 ```
 
 cd /Users/haruya/arcade-controller-design-project/backend
@@ -310,11 +318,14 @@ SERVICE_NAME=arcade-backend POWER=medium SCALE=1 IMAGE_URI="$IMAGE_ALIAS" \
 ```
 
 # 任意: サービス名/リソースは環境変数で調整
+
 SERVICE_NAME=arcade-backend POWER=medium SCALE=1 ./scripts/deploy-lightsail.sh
 
-# 2) 出力URLにアクセス
+# 2) 出力 URL にアクセス
+
 # 例: https://xxx.lightsail.aws.amazon.com/api/v1/health/
-```
+
+````
 
 既定構成:
 
@@ -346,7 +357,7 @@ SERVICE_NAME=arcade-backend POWER=medium SCALE=1 ./scripts/deploy-lightsail.sh
   ],
   "units": "mm"
 }
-```
+````
 
 #### パラメータ説明
 
